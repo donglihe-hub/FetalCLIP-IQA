@@ -1,0 +1,10 @@
+task: classification
+data_dir: "data/acouslic-ai"
+experiment_logs_dir: "experiment_logs"
+fetalclip_config_path: "FetalCLIP_config.json"
+fetalclip_weights_path: "FetalCLIP_weights.pt"
+
+num_workers: 16
+batch_size: 64
+max_epochs: 50
+num_trials: 5
