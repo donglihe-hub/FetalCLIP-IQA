@@ -20,11 +20,8 @@ def train_val_test_split(
     val_dir: Path,
     test_dir: Path,
     seed: int = 9872398152123123767126,
+    visualize: bool=False,
 ):
-    train_dir.mkdir(parents=True, exist_ok=True)
-    val_dir.mkdir(parents=True, exist_ok=True)
-    test_dir.mkdir(parents=True, exist_ok=True)
-
     df = pd.read_csv(ac_csv_path)
     names = df["uuid"]
 
@@ -128,17 +125,19 @@ def train_val_test_split(
                     )
 
                     # save image to png for visualization
-                    img_pil = Image.fromarray(image_mask_aug["image"].astype(np.uint8))
-                    save_path = (
-                        target_dir.parent
-                        / f"{target_dir.name}_png"
-                        / f"{name}_{slice_idx}{suffix}.png"
-                    )
-                    save_path.parent.mkdir(parents=True, exist_ok=True)
-                    img_pil.save(save_path)
+                    filestem = f"{name}_{slice_idx}{suffix}"
+                    if visualize:
+                        img_pil = Image.fromarray(image_mask_aug["image"].astype(np.uint8))
+                        save_path = (
+                            target_dir / "image" / f"{filestem}.png"
+                        )
+                        save_path.parent.mkdir(parents=True, exist_ok=True)
+                        img_pil.save(save_path)
 
+                    save_path = target_dir / "data" / f"{filestem}.npz"
+                    save_path.parent.mkdir(parents=True, exist_ok=True)
                     np.savez(
-                        target_dir / f"{name}_{slice_idx}{suffix}.npz",
+                        save_path,
                         image=image_mask_aug["image"],
                         mask=image_mask_aug["mask"],
                     )
@@ -185,4 +184,5 @@ if __name__ == "__main__":
         train_dir=train_dir,
         val_dir=val_dir,
         test_dir=test_dir,
+        visualize=True,
     )

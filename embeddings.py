@@ -1,10 +1,11 @@
-import Lightning as L
+from pathlib import Path
+import lightning as L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import tqdm
 import open_clip
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 class HF_VisualEncoderWithHooks(nn.Module):
     """
@@ -158,24 +159,19 @@ class EncoderWrapper(nn.Module):
             'z9': z9, 'z12': z12,
         }
 
-def get_embedding_paths_dict(model: L.lightningModel, dataloader: DataLoader, task: str):
+def generate_embeddings(model: L.LightningModule, dataloader: DataLoader, task: str):
+    if len(dataloader.dataset) == 0:
+        return
     
-    emb_paths_dict = {}
-    for item in tqdm.tqdm(dataloader, desc='Extracting embeddings'):
-        image_path = item["image_path"]
-        emb_path = image_path.parent / f"embeddings" / f"{image_path.stem}.pt"
-        emb_paths_dict[image_path.stem] = emb_path
-        
-        if not emb_path.exists():
-            emb_path.parent.mkdir(parents=True, exist_ok=True)
+    for items in tqdm(dataloader, desc='Extracting embeddings'):
+        images = items["image"].to('cuda')
 
-            x = item["image"].to('cuda')
-            with torch.no_grad():
-                z = model(x)
+        with torch.no_grad():
+            z_batch = model(images)
 
+        for i, emb_path in enumerate(items["emb_path"]):
             if task == "classification":
-                emb = z.detach().cpu().squeeze(0)
+                emb = z_batch[i].detach().cpu()
             elif task == "segmentation":
-                emb = {i: z[i].detach().cpu().squeeze(0) for i in ["z3", "z6", "z9", "z12"]}
+                emb = {k: z_batch[k][i].detach().cpu() for k in ["z3", "z6", "z9", "z12"]}
             torch.save(emb, emb_path)
-    return emb_paths_dict

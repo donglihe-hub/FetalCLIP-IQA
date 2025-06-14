@@ -1,7 +1,11 @@
 data
 logs
+__pycache__
+fetalclip
+wandb
 
 .*
 *.sbatch
 *.json
 *.pt
+*.ipynb
