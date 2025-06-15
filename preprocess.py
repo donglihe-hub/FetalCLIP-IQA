@@ -20,6 +20,7 @@ def train_val_test_split(
     val_dir: Path,
     test_dir: Path,
     seed: int = 9872398152123123767126,
+    num_train_aug: int = 1,
     visualize: bool=False,
 ):
     df = pd.read_csv(ac_csv_path)
@@ -105,7 +106,7 @@ def train_val_test_split(
                 mask = pad_to_square(mask)
 
                 if is_train:
-                    num_aug = 6
+                    num_aug = num_train_aug
                 else:
                     num_aug = 1
                 for aug_idx in range(num_aug):
@@ -184,5 +185,6 @@ if __name__ == "__main__":
         train_dir=train_dir,
         val_dir=val_dir,
         test_dir=test_dir,
+        num_train_aug = 2,
         visualize=True,
     )

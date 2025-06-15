@@ -8,17 +8,20 @@ from datetime import datetime
 import yaml
 import pandas as pd
 import lightning as L
+import timm
+import torch
 import torchvision.transforms as T
-import albumentations as A
 import open_clip
-from lightning.pytorch.callbacks import ModelCheckpoint, Timer
+from lightning.pytorch.callbacks import ModelCheckpoint, Timer, EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
 
 from embeddings import EncoderWrapper
 from data import AcouslicAIDataModule
 from model import ClassificationModel, SegmentationModel
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Set to the GPU you want to use
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"  # Set to the GPU you want to use
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,25 +31,48 @@ CLASS_NAME_TO_IDX= {
     'Present': 1,
 }
 
-def get_model_and_transforms(config: dict):
-    # Load model configuration
-    fetalclip_config_path = config["fetalclip_config_path"]
-    fetalclip_weights_path = config["fetalclip_weights_path"]
-    with open(fetalclip_config_path, "r") as file:
-        fetalclip_config = json.load(file)
-    open_clip.factory._MODEL_CONFIGS[config["model_name"]] = fetalclip_config
+def get_model_and_transforms(model_name: str, config: dict):
+    if model_name == "fetalclip":
+        # Load model configuration
+        fetalclip_config_path = config["fetalclip_config_path"]
+        fetalclip_weights_path = config["fetalclip_weights_path"]
+        with open(fetalclip_config_path, "r") as file:
+            fetalclip_config = json.load(file)
+        open_clip.factory._MODEL_CONFIGS["FetalCLIP"] = fetalclip_config
 
-    model, _, image_transform = open_clip.create_model_and_transforms(
-        config["model_name"], pretrained=fetalclip_weights_path
-    )
-    model.visual.eval()
-    model = model.visual
+        model, _, image_transform = open_clip.create_model_and_transforms(
+            "FetalCLIP", pretrained=fetalclip_weights_path
+        )
+        model.visual.eval()
+        model = model.visual
+
+        if config["task"] == "segmentation":
+            model = EncoderWrapper(model)
+
+        image_size = fetalclip_config["vision_cfg"]["image_size"]
+    elif model_name == "resnet":
+        model_name = "resnet50"
+    elif model_name == "densenet":
+        model_name = "densenet121"
+    elif model_name == "mobilenet":
+        model_name = "mobilenetv3_small_100"
+    elif model_name == "efficientnet":
+        model_name = "efficientnet_b0"
+    elif model_name == "vgg":
+        model_name = "vgg16"
+    elif model_name == "vit":
+        model_name = "vit_large_patch16_224.augreg_in21k_ft_in1k"
+    else:
+        raise ValueError(f"Unsupported model name: {config['model_name']}")
+    
+    if model_name != "fetalclip":
+        model = timm.create_model(model_name, pretrained=True, num_classes=0)
+        model_config = resolve_data_config({}, model=model)
+        image_transform = create_transform(**model_config)
+        image_size = model.default_cfg['input_size'][-1]
 
     mask_transform = None
     if config["task"] == "segmentation":
-        model = EncoderWrapper(model)
-
-        image_size = fetalclip_config["vision_cfg"]["image_size"]
         mask_transform = T.Compose(
             [
                 T.Resize((image_size, image_size), interpolation=T.InterpolationMode.NEAREST),
@@ -59,18 +85,25 @@ def get_model_and_transforms(config: dict):
 
 def main(config):
     run_name_prefix = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    model_name = config["model_name"]
     task = config["task"]
-
+    model_name = config["model_name"].lower()
     encoder, image_transform, mask_transform = get_model_and_transforms(
-        config
+        model_name, config
     )
+
+    if model_name == "fetalclip":
+        input_dim = encoder.proj.shape[1]
+    elif model_name in ["resnet", "densenet", "efficientnet"]:
+        input_dim = encoder.num_features
+    elif model_name in ["mobilenet", "vgg"]:
+        input_dim = encoder.head_hidden_size
+    elif model_name == "vit":
+        input_dim = encoder.embed_dim
 
     encoder.eval()
     encoder = encoder.cuda()
 
-    exp_logs_dir = Path(config["experiment_logs_dir"]) / task
-    exp_logs_path = exp_logs_dir / f"{model_name}.csv"
+    exp_logs_path = Path(config["output_dir"]) / "experiment_logs" / task / f"{model_name}_{run_name_prefix}.csv"
 
     data_module = AcouslicAIDataModule(
         task=task,
@@ -79,12 +112,11 @@ def main(config):
         num_workers=config["num_workers"],
         image_transform=image_transform,
         mask_transform=mask_transform,
-        use_augmentation=False,
+        use_augmentation=config["use_augmentation"],
     )
     data_module.prepare_data()
 
-    input_dim = encoder.proj.shape[1]
-    if config["store_embeddings"]:
+    if config["store_embeddings"] and model_name == "fetalclip":
         data_module.setup("embeddings")
         data_module.prepare_embeddings(encoder)
         encoder = None
@@ -100,25 +132,31 @@ def main(config):
             df_logs = pd.read_csv(exp_logs_path)
             if trial in df_logs["trial"].values:
                 continue
-        run_name = f"{run_name_prefix}_{task}_trial_{trial}"
+        run_name = f"{model_name}_{task}_{run_name_prefix}_trial_{trial}"
         logger.info(f"Starting trial {trial + 1}/{num_trials} for task {task}")
 
-        num_classes = 1 if len(CLASS_NAME_TO_IDX) == 2 else len(CLASS_NAME_TO_IDX)
+        # binary classification
+        num_classes = 1  # if len(CLASS_NAME_TO_IDX) == 2 else len(CLASS_NAME_TO_IDX)
         if task == "classification":
-            model = ClassificationModel(encoder, input_dim, num_classes)
+            model = ClassificationModel(encoder, input_dim, num_classes, freeze_encoder=config["freeze_encoder"])
         elif task == "segmentation":
             model = SegmentationModel(
                 encoder, encoder.transformer.width, num_classes, 3
             )
+        torch.set_float32_matmul_precision('high')
+        model = torch.compile(model)
 
         checkpoint = ModelCheckpoint(
-            monitor="val_loss", mode="min", dirpath=Path("fetalclip") / task / str(trial),
+            monitor="val_loss", mode="min", dirpath=Path(config["output_dir"]) / "fetalclip" / task / model_name / run_name_prefix / str(trial),
         )
-        callbacks = [checkpoint, Timer()]
+        earlystop = EarlyStopping(monitor="val_loss", patience=10, mode="min")
+        timer = Timer()
+        callbacks = [checkpoint, earlystop, timer]
 
         wandb_logger = WandbLogger(
             project="Finetune-FetalCLIP",
             name=run_name,
+            save_dir=Path(config["output_dir"]) / "fetalclip" / task / model_name / run_name_prefix / str(trial),
         )
 
         trainer = L.Trainer(
@@ -132,6 +170,8 @@ def main(config):
         trainer.fit(model, train_dataloader, val_dataloader)
         results = trainer.test(dataloaders=test_dataloader, ckpt_path="best")
 
+        wandb_logger.experiment.log({"train_time": timer.time_elapsed("train")})
+
         results = {"trial": trial, **results[0]}
 
         # Save results to CSV
@@ -139,7 +179,7 @@ def main(config):
         if exp_logs_path.exists():
             df_new.to_csv(exp_logs_path, mode="a", header=False, index=False)
         else:
-            exp_logs_path.parent.mkdir(parents=True)
+            exp_logs_path.parent.mkdir(parents=True, exist_ok=True)
             df_new.to_csv(exp_logs_path, mode="w", header=True, index=False)
 
 

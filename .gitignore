@@ -1,8 +1,10 @@
-data
-logs
 __pycache__
+data
+experiment_logs
 fetalclip
+logs
 wandb
+outputs
 
 .*
 *.sbatch

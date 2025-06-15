@@ -23,22 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class ClassificationModel(L.LightningModule):
-    def __init__(self, encoder: None | nn.Module, input_dim: int, num_classes: int):
+    def __init__(self, encoder: None | nn.Module, input_dim: int, num_classes: int, freeze_encoder: bool = True):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder"])
         self.num_classes = num_classes
         self.encoder = encoder
         self.output = nn.Linear(input_dim, num_classes)
-        if self.encoder is not None:
+
+        self.freeze_encoder = freeze_encoder
+        if self.freeze_encoder and self.encoder is not None:
             for param in self.encoder.parameters():
                 param.requires_grad = False
-            
-            self.model = nn.Sequential(
-                self.encoder,
-                self.output,
-            )
-        else:
-            self.model = self.output
         
         self.loss_fn = nn.BCEWithLogitsLoss()
         self.lr = 3e-4
@@ -56,40 +51,53 @@ class ClassificationModel(L.LightningModule):
         self.test_metrics = self.val_metrics.clone(prefix="test_")
 
     def forward(self, x):
-        return self.model(x)
-
-    def on_fit_start(self):
-        n_total = sum(p.numel() for p in self.parameters())
-        n_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        logger.info(f"Total: {n_total}, Trainable: {n_trainable}")
-
         if self.encoder is not None:
-            x = torch.randn(1, 3, 224, 224).cuda()
-        else:
-            x = torch.randn(1, 768).cuda()
+            x = self.encoder(x)
+        x = self.output(x)
+        return x
 
-        with torch.no_grad():
-            for _ in range(20):
-                self(x)
+    # def on_fit_start(self):
+    #     n_total = sum(p.numel() for p in self.parameters())
+    #     n_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
+    #     logger.info(f"Total: {n_total}, Trainable: {n_trainable}")
 
-        flops_counter = TorchFLOPsByFX(self.model)
+    #     if self.encoder is not None:
+    #         model = nn.Sequential(
+    #             self.encoder,
+    #             self.output,
+    #         )
+    #     else:
+    #         model = self.output
 
-        flops_counter.propagate(x)
-        total_flops = flops_counter.print_total_flops(show=False)
-        max_memory = flops_counter.print_max_memory(show=False)
+    #     if self.encoder is not None:
+    #         x = torch.randn(1, 3, 224, 224).cuda()
+    #     else:
+    #         x = torch.randn(1, 768).cuda()
 
-        time_list = []
-        for _ in range(50):
-            flops_counter.propagate(x)
-            time_list.append(flops_counter.print_total_time(show=False))
-        average_time = sum(time_list) / len(time_list)
+    #     with torch.no_grad():
+    #         for _ in range(20):
+    #             model(x)
+        
+    #     flops_counter = TorchFLOPsByFX(model)
 
-        logger.info(f"flops {total_flops}")
-        logger.info(f"max memory {max_memory}")
-        logger.info(f"average inference time {average_time}")
+    #     flops_counter.propagate(x)
+    #     total_flops = flops_counter.print_total_flops(show=False)
+    #     max_memory = flops_counter.print_max_memory(show=False)
+
+    #     time_list = []
+    #     for _ in range(50):
+    #         flops_counter.propagate(x)
+    #         time_list.append(flops_counter.print_total_time(show=False))
+    #     average_time = sum(time_list) / len(time_list)
+
+    #     self.logger.experiment.log({"flops": total_flops, "max_memory": max_memory, "average_time": average_time})
+    #     logger.info(f"FLOPs: {total_flops}")
+    #     logger.info(f"Max Memory: {max_memory}")
+    #     logger.info(f"Average Time: {average_time}")
+
 
     def training_step(self, batch, batch_idx):
-        if "embs" in batch:
+        if self.encoder is None:
             x = batch["embs"]
         else:
             x = batch["image"]
@@ -102,7 +110,7 @@ class ClassificationModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if "embs" in batch:
+        if self.encoder is None:
             x = batch["embs"]
         else:
             x = batch["image"]
@@ -139,7 +147,7 @@ class ClassificationModel(L.LightningModule):
         plt.close(fig)
 
     def test_step(self, batch, batch_idx):
-        if "embs" in batch:
+        if self.encoder is None:
             x = batch["embs"]
         else:
             x = batch["image"]
@@ -175,7 +183,7 @@ class ClassificationModel(L.LightningModule):
         plt.close(fig)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.output.parameters(), lr=3e-4)
+        return torch.optim.AdamW(self.output.parameters(), lr=self.lr)
 
 
 class SegmentationModel(L.LightningModule):
@@ -186,7 +194,10 @@ class SegmentationModel(L.LightningModule):
         for param in self.encoder.parameters():
             param.requires_grad = False
         self.output = UNETR(transformer_width, num_classes, input_dim, init_filters)
+
         self.loss_fn = DiceLoss(sigmoid=True)  # DiceCELoss(sigmoid=True)
+        self.lr = 3e-4
+
         self.validation_step_outputs = []
 
     def forward(self, x):

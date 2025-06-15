@@ -225,6 +225,9 @@ class AcoudslicAIDataset(Dataset):
         for data_path in sorted(self.data_dir.glob("*.npz")):
             if not use_augmentation and len(data_path.stem.split("_")) >= 3:
                 continue
+            if len(data_path.stem.split("_")) >= 3 and not ("_0.npz" in data_path.name or "_1.npz" in data_path.name):
+                continue
+
             if few_shot_list is not None and data_path.stem not in few_shot_list:
                 continue
 
@@ -246,7 +249,7 @@ class AcoudslicAIDataset(Dataset):
         label = (mask.sum() > 0).astype(np.float32)[None]
 
         if self.image_transform:
-            image = Image.fromarray(image)
+            image = Image.fromarray(image).convert('RGB')
             image = self.image_transform(image)
         if self.mask_transform:
             mask = Image.fromarray(mask)
