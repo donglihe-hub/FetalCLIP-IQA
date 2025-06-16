@@ -1,4 +1,4 @@
-model_name: vgg
+model_name: vit
 task: classification
 data_dir: "data/acouslic-ai"
 output_dir: "outputs"

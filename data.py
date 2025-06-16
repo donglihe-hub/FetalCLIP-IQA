@@ -48,7 +48,7 @@ class AcouslicAIDataModule(L.LightningDataModule):
         # or use the preprocessed dataset using the link on our github repository
         ...
 
-    def prepare_embeddings(self, model, num_workers: int = 12, num_batches: int = 128):
+    def prepare_embeddings(self, model, num_workers: int = 8, num_batches: int = 128):
         if self.embedding_paths_dict is not None:
             return
 

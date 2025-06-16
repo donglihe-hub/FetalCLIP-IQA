@@ -6,7 +6,7 @@ import lightning as L
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
-from monai.losses import DiceLoss
+from monai.losses import DiceLoss, DiceCELoss
 from torch_flops import TorchFLOPsByFX
 from torchmetrics import (
     MetricCollection,
@@ -17,6 +17,8 @@ from torchmetrics import (
     Specificity,
     ConfusionMatrix,
 )
+import segmentation_models_pytorch.utils as smp_utils
+from torchmetrics.segmentation import DiceScore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -187,88 +189,182 @@ class ClassificationModel(L.LightningModule):
 
 
 class SegmentationModel(L.LightningModule):
-    def __init__(self, encoder, transformer_width, num_classes, input_dim, init_filters=32):
+    def __init__(self, encoder, transformer_width, num_classes, input_dim, init_filters=32, freeze_encoder=True):
         super().__init__()
+        self.save_hyperparameters(ignore=["encoder"])
         self.num_classes = num_classes
         self.encoder = encoder
-        for param in self.encoder.parameters():
-            param.requires_grad = False
+        self.freeze_encoder = freeze_encoder
+        if self.freeze_encoder and self.encoder is not None:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
         self.output = UNETR(transformer_width, num_classes, input_dim, init_filters)
 
-        self.loss_fn = DiceLoss(sigmoid=True)  # DiceCELoss(sigmoid=True)
+        # self.loss_fn = DiceLoss(sigmoid=True)
+        self.loss_fn = DiceCELoss(sigmoid=True)
         self.lr = 3e-4
+
+        self.val_metrics = MetricCollection(
+            {
+                "accuracy": Accuracy(task="binary"),
+                "recall": Recall(task="binary"),
+                "f1": F1Score(task="binary"),
+                "precision": Precision(task="binary"),
+                "specificity": Specificity(task="binary"),
+                "confmat": ConfusionMatrix(task="binary"),
+            }
+        )
+        self.dice_score = DiceScore(
+            num_classes=self.num_classes,
+            include_background=False,
+        )
+        self.test_metrics = self.val_metrics.clone(prefix="test_")
 
         self.validation_step_outputs = []
 
     def forward(self, x):
-        x = self.encoder(x)
+        if self.encoder is not None:
+            x = self.encoder(x)
         x = self.output(x)
         return x
 
-    def training_step(self, batch, batch_nb):
-        x, y, embs = batch
+    def training_step(self, batch, batch_idx):
+        x = batch["image"]
+        embs = batch["embs"]
+        y = batch["mask"]
 
-        pred = self.forward([x, *embs])
+        logits = self([x, *embs.values()])
+        loss = self.loss_fn(logits, y)
+        self.log("train_loss", loss)
 
-        loss = self.loss_fn(pred, y)
-
-        # dsc = smp_utils.metrics.Fscore(activation='sigmoid')(pred, y)
-
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        # self.log('train_dsc', dsc, on_step=True, on_epoch=True, prog_bar=True)
+        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(logits, y)
+        self.log('train_dsc', dsc)
 
         return loss
 
-    def validation_step(self, batch, batch_nb):
-        x, y, embs = batch
+    def validation_step(self, batch, batch_idx):
+        x = batch["image"]
+        embs = batch["embs"]
+        y = batch["mask"]
 
-        pred = self.forward([x, *embs])
+        logits = self([x, *embs.values()])
 
-        self.validation_step_outputs.append((pred, y))
-        return pred, y
+        loss = self.loss_fn(logits, y)
+        self.log("val_loss", loss)
 
-    def test_step(self, batch, batch_nb):
-        return self.validation_step(batch, batch_nb)
+        probs = torch.sigmoid(logits)
+        pred_label = ((probs > 0.5).sum((2, 3)) > 100).to(torch.int64)
+        label = batch["label"].to(torch.int64)
+
+        self.val_metrics.update(pred_label, label)
+
+        pred_mask = (probs > 0.5).to(torch.int64)
+        self.dice_score.update(pred_mask, y)
+
+        # validation
+        self.validation_step_outputs.append((logits.detach().cpu(), y.detach().cpu()))
 
     def on_validation_epoch_end(self):
+        results = self.val_metrics.compute()
+        self.val_metrics.reset()
+
+        dsc = self.dice_score.compute()
+        self.dice_score.reset()
+
+        self.log("val_dsc", dsc, prog_bar=True)
+
+        confmat = results.pop("confmat").cpu().numpy()
+        self.log_dict(results, prog_bar=True)
+        for i in range(2):
+            for j in range(2):
+                self.log(f"confusion_matrix_{i}_{j}", confmat[i, j])
+
+        fig, ax = plt.subplots()
+        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        ax.set_title("Confusion Matrix")
+        self.logger.experiment.log(
+            {
+                "confusion_matrix": wandb.Image(fig),
+            }
+        )
+        plt.close(fig)
+
+        # validation
         preds = []
         targets = []
 
         for outs in self.validation_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
-
-        preds = torch.cat(preds).cpu()
-        targets = torch.cat(targets).cpu()
-
-        loss = self.loss_fn(preds, targets)
-
-        # dsc = smp_utils.metrics.Fscore(activation='sigmoid')(preds, targets)
-        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        # self.log('val_dsc', dsc, on_step=False, on_epoch=True, prog_bar=True)
-
         self.validation_step_outputs.clear()
+        
+        preds = torch.cat(preds)
+        targets = torch.cat(targets)
+        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(preds, targets)
+        self.log("val_smp", dsc, prog_bar=True)
+
+    def test_step(self, batch, batch_idx):
+        x = batch["image"]
+        embs = batch["embs"]
+        y = batch["mask"]
+
+        logits = self([x, *embs.values()])
+        loss = self.loss_fn(logits, y)
+        self.log("test_loss", loss, prog_bar=True)
+
+        probs = torch.sigmoid(logits)
+        pred_label = ((probs > 0.5).sum((2, 3)) > 100).to(torch.int64)
+        label = batch["label"].to(torch.int64)
+
+        self.test_metrics.update(pred_label, label)
+
+        pred_mask = (probs > 0.5).to(torch.int64)
+        self.dice_score.update(pred_mask, y)
+
+        # validation
+        self.validation_step_outputs.append((logits.detach().cpu(), y.detach().cpu()))
 
     def on_test_epoch_end(self):
+        results = self.test_metrics.compute()
+        self.test_metrics.reset()
+
+        dsc = self.dice_score.compute()
+        self.dice_score.reset()
+        self.log("test_dsc", dsc, prog_bar=True)
+
+        confmat = results.pop("confmat").cpu().numpy()
+        self.log_dict(results, prog_bar=True)
+        for i in range(2):
+            for j in range(2):
+                self.log(f"confusion_matrix_{i}_{j}", confmat[i, j])
+
+        fig, ax = plt.subplots()
+        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        ax.set_title("Confusion Matrix")
+        self.logger.experiment.log(
+            {
+                "confusion_matrix": wandb.Image(fig),
+            }
+        )
+        plt.close(fig)
+
+        # validation
         preds = []
         targets = []
 
         for outs in self.validation_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
-
-        preds = torch.cat(preds).cpu()
-        targets = torch.cat(targets).cpu()
-
-        test_loss = self.loss_fn(preds, targets)
-
-        # test_dsc = smp_utils.metrics.Fscore(activation='sigmoid')(preds, targets)
-        self.log("test_loss", test_loss, on_step=False, on_epoch=True, prog_bar=True)
-        # self.log('test_dsc', test_dsc, on_step=False, on_epoch=True, prog_bar=True)
-
-        self.test_metrics = {"test_loss": test_loss, "test_dsc": test_dsc}
-
         self.validation_step_outputs.clear()
+        
+        preds = torch.cat(preds)
+        targets = torch.cat(targets)
+        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(preds, targets)
+        self.log("val_smp", dsc, prog_bar=True)
 
     def configure_optimizers(self):
         trainable_params = (
@@ -279,7 +375,7 @@ class SegmentationModel(L.LightningModule):
         for name, param in self.named_parameters():
             if name.startswith("model.transformer"):
                 param.requires_grad = False
-        return torch.optim.AdamW(trainable_params, lr=self.lr, weight_decay=0.01)
+        return torch.optim.AdamW(trainable_params, lr=self.lr)
 
 
 """
@@ -419,7 +515,7 @@ class UNETR(nn.Module):
 
     def forward(self, x):
         z0, z3, z6, z9, z12 = x
-
+        
         # print(z0.shape, z3.shape, z6.shape, z9.shape, z12.shape)
         z12 = self.decoder12_upsampler(z12)
         z9 = self.decoder9(z9)

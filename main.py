@@ -21,7 +21,7 @@ from embeddings import EncoderWrapper
 from data import AcouslicAIDataModule
 from model import ClassificationModel, SegmentationModel
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"  # Set to the GPU you want to use
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Set to the GPU you want to use
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,14 +91,19 @@ def main(config):
         model_name, config
     )
 
-    if model_name == "fetalclip":
-        input_dim = encoder.proj.shape[1]
-    elif model_name in ["resnet", "densenet", "efficientnet"]:
-        input_dim = encoder.num_features
-    elif model_name in ["mobilenet", "vgg"]:
-        input_dim = encoder.head_hidden_size
-    elif model_name == "vit":
-        input_dim = encoder.embed_dim
+    if task == "classification":
+        if model_name == "fetalclip":
+            input_dim = encoder.proj.shape[1]
+        elif model_name in ["resnet", "densenet", "efficientnet"]:
+            input_dim = encoder.num_features
+        elif model_name in ["mobilenet", "vgg"]:
+            input_dim = encoder.head_hidden_size
+        elif model_name == "vit":
+            input_dim = encoder.embed_dim
+    elif task == "segmentation":
+        if model_name == "fetalclip":
+            transformer_width = encoder.transformer.width
+
 
     encoder.eval()
     encoder = encoder.cuda()
@@ -141,8 +146,7 @@ def main(config):
             model = ClassificationModel(encoder, input_dim, num_classes, freeze_encoder=config["freeze_encoder"])
         elif task == "segmentation":
             model = SegmentationModel(
-                encoder, encoder.transformer.width, num_classes, 3
-            )
+                encoder, transformer_width, num_classes, 3, freeze_encoder=config["freeze_encoder"])
         torch.set_float32_matmul_precision('high')
         model = torch.compile(model)
 
