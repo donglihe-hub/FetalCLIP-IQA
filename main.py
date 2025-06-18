@@ -17,11 +17,10 @@ from lightning.pytorch.loggers import WandbLogger
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 
-from embeddings import EncoderWrapper
 from data import AcouslicAIDataModule
 from model import ClassificationModel, SegmentationModel
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Set to the GPU you want to use
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # Set to the GPU you want to use
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,11 +42,7 @@ def get_model_and_transforms(model_name: str, config: dict):
         model, _, image_transform = open_clip.create_model_and_transforms(
             "FetalCLIP", pretrained=fetalclip_weights_path
         )
-        model.visual.eval()
         model = model.visual
-
-        if config["task"] == "segmentation":
-            model = EncoderWrapper(model)
 
         image_size = fetalclip_config["vision_cfg"]["image_size"]
     elif model_name == "resnet":
@@ -104,8 +99,6 @@ def main(config):
         if model_name == "fetalclip":
             transformer_width = encoder.transformer.width
 
-
-    encoder.eval()
     encoder = encoder.cuda()
 
     exp_logs_path = Path(config["output_dir"]) / "experiment_logs" / task / f"{model_name}_{run_name_prefix}.csv"
@@ -148,7 +141,7 @@ def main(config):
             model = SegmentationModel(
                 encoder, transformer_width, num_classes, 3, freeze_encoder=config["freeze_encoder"])
         torch.set_float32_matmul_precision('high')
-        model = torch.compile(model)
+        # model = torch.compile(model)
 
         checkpoint = ModelCheckpoint(
             monitor="val_loss", mode="min", dirpath=Path(config["output_dir"]) / "fetalclip" / task / model_name / run_name_prefix / str(trial),
@@ -198,5 +191,9 @@ if __name__ == "__main__":
     with open(config_path, "r") as file:
         config = yaml.safe_load(file)
     logger.info(config)
-
-    main(config)
+    try:
+        main(config)
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()

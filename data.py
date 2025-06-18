@@ -3,11 +3,13 @@ from pathlib import Path
 
 import lightning as L
 import numpy as np
+import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 
-from embeddings import generate_embeddings
+from embeddings import generate_embeddings, EncoderWrapper
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,7 +53,10 @@ class AcouslicAIDataModule(L.LightningDataModule):
     def prepare_embeddings(self, model, num_workers: int = 8, num_batches: int = 128):
         if self.embedding_paths_dict is not None:
             return
-
+        
+        model.eval()
+        if self.task == "segmentation":
+            model = EncoderWrapper(model)
         dataloader = DataLoader(
                 ConcatDataset(
                     [self.train_dataset, self.val_dataset, self.test_dataset]
@@ -106,14 +111,17 @@ class AcouslicAIDataModule(L.LightningDataModule):
             )
         elif stage == "fit":
             self.train_dataset = AcoudslicAIDataset(
+                task=self.task,
                 data_dir=self.data_dir / "train" / "data",
                 image_transform=self.image_transform,
                 mask_transform=self.mask_transform,
                 few_shot_list=self.few_shot_list,
                 use_augmentation=self.use_augmentation,
                 embedding_paths_dict=self.embedding_paths_dict,
+                is_train=True,
             )
             self.val_dataset = AcoudslicAIDataset(
+                task=self.task,
                 data_dir=self.data_dir / "val" / "data",
                 image_transform=self.image_transform,
                 mask_transform=self.mask_transform,
@@ -122,6 +130,7 @@ class AcouslicAIDataModule(L.LightningDataModule):
                 embedding_paths_dict=self.embedding_paths_dict,
             )
             self.test_dataset = AcoudslicAIDataset(
+                task=self.task,
                 data_dir=self.data_dir / "test" / "data",
                 image_transform=self.image_transform,
                 mask_transform=self.mask_transform,
@@ -209,12 +218,14 @@ class EmbeddingDataset(Dataset):
 class AcoudslicAIDataset(Dataset):
     def __init__(
         self,
+        task: str,
         data_dir: str | Path,
         image_transform=None,
         mask_transform=None,
         few_shot_list=None,
         use_augmentation: bool = True,
         embedding_paths_dict=None,
+        is_train=False
     ):
         self.data_dir = Path(data_dir)
         self.image_transform = image_transform
@@ -222,11 +233,31 @@ class AcoudslicAIDataset(Dataset):
         self.embedding_paths_dict = embedding_paths_dict
 
         self.data = []
+        if task == "segmentation" and is_train:
+            label_info = pd.read_csv(
+                self.data_dir.parent / "label_info.csv", index_col=0
+            )
+            label_0_files = label_info[label_info["label"] == 0].index.tolist()
+            label_0_files = [i for i in label_0_files if len(i.split("_")) < 3]
+            label_1_files = label_info[label_info["label"] == 1].index.tolist()
+
+            rng = np.random.default_rng(42)
+            selected_label_0_files = rng.choice(label_0_files, size=len(label_1_files), replace=False)
+
+            selected_files = set(label_1_files) | set(selected_label_0_files)
+
+            logger.info(f"original 0: {len(label_0_files)} ,0: {len(selected_label_0_files)}, 1: {len(label_1_files)}")
+
+
         for data_path in sorted(self.data_dir.glob("*.npz")):
             if not use_augmentation and len(data_path.stem.split("_")) >= 3:
                 continue
             if len(data_path.stem.split("_")) >= 3 and not ("_0.npz" in data_path.name or "_1.npz" in data_path.name):
                 continue
+
+            if task == "segmentation" and is_train:
+                if data_path.stem not in selected_files:
+                    continue
 
             if few_shot_list is not None and data_path.stem not in few_shot_list:
                 continue
@@ -235,7 +266,7 @@ class AcoudslicAIDataset(Dataset):
                 self.data.append((data_path, self.embedding_paths_dict[data_path.stem]))
             else:
                 self.data.append((data_path,))
-    
+
     def __len__(self):
         return len(self.data)
 

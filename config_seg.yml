@@ -7,9 +7,9 @@ fetalclip_weights_path: "FetalCLIP_weights.pt"
 
 num_workers: 8
 batch_size: 64
-max_epochs: 10
+max_epochs: 50
 num_trials: 5
 
 store_embeddings: true
 use_augmentation: true
-freeze_encoder: false
+freeze_encoder: true

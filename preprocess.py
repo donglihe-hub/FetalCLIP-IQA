@@ -143,6 +143,25 @@ def train_val_test_split(
                         mask=image_mask_aug["mask"],
                     )
 
+def generate_label_info(data_dir: Path, split: str):
+    """
+    Generate a CSV file with the label information for the specified split.
+    The CSV will contain the filename and label (1 for presence of mask, 0 for absence).
+    """
+    assert split in ["train", "val", "test"], "Invalid split specified"
+    
+    data_dir = data_dir / split
+    data_list = []
+    for npz_file in tqdm(sorted(data_dir.glob("data/*.npz")), desc=f"Generating label info for {split}"):
+        data = np.load(npz_file)
+        filename = npz_file.stem
+        label = (data["mask"].sum() > 0).astype(int)
+        data_list.append({"filename": filename, "label": label})
+
+    df = pd.DataFrame(data_list)
+    df.to_csv(data_dir / "label_info.csv", index=False)
+        
+
 
 def pad_to_square(arr):
     h, w = arr.shape
@@ -188,3 +207,6 @@ if __name__ == "__main__":
         num_train_aug = 2,
         visualize=True,
     )
+    generate_label_info(data_dir, split="train")
+    generate_label_info(data_dir, split="val")
+    generate_label_info(data_dir, split="test")

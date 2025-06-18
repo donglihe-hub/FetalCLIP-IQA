@@ -13,7 +13,7 @@ class HF_VisualEncoderWithHooks(nn.Module):
     - https://github.com/huggingface/pytorch-image-models/blob/2703d155c88d27bba9a1f465f5489a7947ffc313/timm/models/vision_transformer.py#L414
     """
     def __init__(self, visual_encoder):
-        super(HF_VisualEncoderWithHooks, self).__init__()
+        super().__init__()
         self.visual_encoder = visual_encoder
         self.hooks = []
         self.intermediate_outputs = {}
@@ -132,7 +132,7 @@ class TIMM_VisualEncoderWithHooks(nn.Module):
 
 class EncoderWrapper(nn.Module):
     def __init__(self, visual_encoder):
-        super(EncoderWrapper, self).__init__()
+        super().__init__()
 
         if isinstance(visual_encoder, open_clip.transformer.VisionTransformer):
             self.transformer = HF_VisualEncoderWithHooks(visual_encoder)
@@ -143,7 +143,8 @@ class EncoderWrapper(nn.Module):
         with torch.no_grad():
             z = self.transformer(x)
         
-            z0, z3, z6, z9, z12 = x, *z[1]
+            z3, z6, z9, z12 = z[1]
+
             z3 = z3.permute(1,2,0).view(-1, self.transformer.width, *self.transformer.grid_size)
             z6 = z6.permute(1,2,0).view(-1, self.transformer.width, *self.transformer.grid_size)
             z9 = z9.permute(1,2,0).view(-1, self.transformer.width, *self.transformer.grid_size)
