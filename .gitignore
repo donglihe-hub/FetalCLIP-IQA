@@ -5,7 +5,6 @@ output*
 .*
 *.code-workspace
 *.ipynb
-*.json
 *.png
 *.pt
 *.pth

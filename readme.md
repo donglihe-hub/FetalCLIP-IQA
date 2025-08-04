@@ -87,7 +87,6 @@ data/
 Download model weights and FetalCLIP config file:
 
 - [FetalCLIP weights](https://mbzuaiac-my.sharepoint.com/:f:/g/personal/fadillah_maani_mbzuai_ac_ae/EspGREsyuOtEpxt36RoEUBoB6jtlsvPeoiDTBC1qX8WdZQ?e=uAbuyv)
-- [FetalCLIP config](https://raw.githubusercontent.com/BioMedIA-MBZUAI/FetalCLIP/refs/heads/main/FetalCLIP_config.json)
 
 Place both files under the project root directory.
 
