@@ -1,13 +1,12 @@
 albumentationsx
 jsonargparse
 lightning
-numpy
 open-clip-torch
 rich
 pandas
 pillow
-PyYAML
-SimpleITK
+peft
+segmentation-models-pytorch
 timm
 torch
 torchmetrics

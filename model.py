@@ -67,9 +67,9 @@ class ClassificationModel(L.LightningModule):
         self.test_metrics = self.val_metrics.clone(prefix="test/")
         self.test_metrics.add_metrics({"confmat": ConfusionMatrix(task="binary")})
 
-        # HARDCODING: save test embeddings [1/3]
-        # self.embeddings = []
-        # self.embedding_labels = []
+        # Embedding visualization [1/3]: save test embeddings for visualization
+        # self.test_embeds = []
+        # self.test_emb_labels = []
 
     def forward(self, x):
         x = self.encoder(x)
@@ -115,11 +115,11 @@ class ClassificationModel(L.LightningModule):
         probs = torch.sigmoid(logits)
         self.test_metrics.update(probs, y)
 
-        # HARDCODING: save test embeddings [2/3]
+        # Embedding visualization [2/3]: save test embeddings for visualization
         # embeddings = self.encoder(x)
         # embeddings = embeddings.detach().cpu()
-        # self.embeddings.append(embeddings)
-        # self.embedding_labels.append(y)
+        # self.test_embeds.append(embeddings)
+        # self.test_emb_labels.append(y)
 
     def on_test_epoch_end(self):
         results = self.test_metrics.compute()
@@ -143,11 +143,13 @@ class ClassificationModel(L.LightningModule):
         )
         plt.close(fig)
 
-        # HARDCODING: save test embeddings [3/3]
-        # self.embeddings = torch.cat(self.embeddings, dim=0)
-        # self.embedding_labels = torch.cat(self.embedding_labels, dim=0)
-        # torch.save(self.embeddings, "embeddings.pt")
-        # torch.save(self.embedding_labels, "embedding_labels.pt")
+        # Embedding visualization [3/3]: save test embeddings for visualization
+        # test_embs = torch.cat(self.test_embeds, dim=0)
+        # test_emb_labels = torch.cat(self.test_emb_labels, dim=0)
+        # torch.save(test_embs, "test_embs.pt")
+        # torch.save(test_emb_labels, "test_emb_labels.pt")
+        # self.test_embs.clear()
+        # self.test_emb_labels.clear()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)

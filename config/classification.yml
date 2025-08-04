@@ -1,4 +1,4 @@
-model_name: resnet # options: densenet, efficientnet, vgg, swin, deit, vit
+model_name: fetalclip # options: densenet, efficientnet, vgg, swin, deit, vit, vit_small, vit_laion, fetalclip
 task: classification
 data_dir: data/acouslic-ai/workshop
 output_dir: outputs
@@ -10,14 +10,14 @@ num_workers: 8
 batch_size: 32
 
 # trainer arguments
-max_epochs: 1
+max_epochs: 5
 
 # number of trials
-num_trials: 5
+num_trials: 2
 
 # data augmentation
-use_augmentation: false
+use_augmentation: true
 
 # network settings
-freeze_encoder: false
-use_lora: false
+freeze_encoder: true
+use_lora: true

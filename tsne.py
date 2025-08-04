@@ -10,13 +10,13 @@ from sklearn.preprocessing import StandardScaler
 
 def main(visual_method: str = "tsne"):
     labels = (
-        torch.load("embedding_labels.pt", map_location="cpu")
+        torch.load("test_emb_labels.pt", map_location="cpu")
         .numpy()
         .squeeze()
         .astype(np.uint8)
     )
     X = (
-        torch.load("embeddings.pt", map_location="cpu")
+        torch.load("test_embs.pt", map_location="cpu")
         .to(torch.float32)
         .numpy()
     )
@@ -59,7 +59,7 @@ def main(visual_method: str = "tsne"):
     plt.grid(False)
     plt.legend(frameon=False, fontsize=24, loc="best")
     plt.tight_layout()
-    plt.savefig("plot.png", dpi=300)
+    plt.savefig(f"test_emb_{visual_method}.png", dpi=300)
 
 
 if __name__ == "__main__":

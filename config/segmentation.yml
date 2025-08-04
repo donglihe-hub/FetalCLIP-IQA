@@ -1,4 +1,4 @@
-model_name: fetalclip
+model_name: fetalclip # options: fetalclip
 task: segmentation
 data_dir: data/acouslic-ai/workshop
 output_dir: outputs
@@ -10,10 +10,10 @@ num_workers: 8
 batch_size: 32
 
 # trainer arguments
-max_epochs: 1
+max_epochs: 5
 
 # number of trials
-num_trials: 1
+num_trials: 5
 
 # data augmentation
 use_augmentation: true

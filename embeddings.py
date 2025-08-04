@@ -1,11 +1,7 @@
-from pathlib import Path
-import lightning as L
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import open_clip
-from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 
 class HF_VisualEncoderWithHooks(nn.Module):
