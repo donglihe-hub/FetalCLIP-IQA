@@ -21,7 +21,7 @@ def train_val_test_split(
     test_dir: Path,
     seed: int = 9872398152123123767126,
     num_train_aug: int = 1,
-    visualize: bool=False,
+    visualize: bool = False,
 ):
     df = pd.read_csv(ac_csv_path)
     names = df["uuid"]
@@ -38,18 +38,20 @@ def train_val_test_split(
     val_names = names[train_val_idx:val_test_idx].tolist()
     test_names = names[val_test_idx:].tolist()
 
-    train_aug = A.Compose([
-        A.ColorJitter(0.2, 0.2, 0, 0, p=0.5),
-        A.CLAHE(p=0.5),
-        A.Affine(
-            translate_percent=(-0.2, 0.2),
-            scale=1.0,
-            rotate=(-20, 20),
-            interpolation=cv2.INTER_LINEAR,
-            border_mode=cv2.BORDER_CONSTANT,
-            p=1.0
-        ),
-    ])
+    train_aug = A.Compose(
+        [
+            A.ColorJitter(0.2, 0.2, 0, 0, p=0.5),
+            A.CLAHE(p=0.5),
+            A.Affine(
+                translate_percent=(-0.2, 0.2),
+                scale=1.0,
+                rotate=(-20, 20),
+                interpolation=cv2.INTER_LINEAR,
+                border_mode=cv2.BORDER_CONSTANT,
+                p=1.0,
+            ),
+        ]
+    )
 
     general_aug = A.Compose(
         [
@@ -128,10 +130,10 @@ def train_val_test_split(
                     # save image to png for visualization
                     filestem = f"{name}_{slice_idx}{suffix}"
                     if visualize:
-                        img_pil = Image.fromarray(image_mask_aug["image"].astype(np.uint8))
-                        save_path = (
-                            target_dir / "image" / f"{filestem}.png"
+                        img_pil = Image.fromarray(
+                            image_mask_aug["image"].astype(np.uint8)
                         )
+                        save_path = target_dir / "image" / f"{filestem}.png"
                         save_path.parent.mkdir(parents=True, exist_ok=True)
                         img_pil.save(save_path)
 
@@ -143,16 +145,19 @@ def train_val_test_split(
                         mask=image_mask_aug["mask"],
                     )
 
+
 def generate_label_info(data_dir: Path, split: str):
     """
     Generate a CSV file with the label information for the specified split.
     The CSV will contain the filename and label (1 for presence of mask, 0 for absence).
     """
     assert split in ["train", "val", "test"], "Invalid split specified"
-    
+
     data_dir = data_dir / split
     data_list = []
-    for npz_file in tqdm(sorted(data_dir.glob("data/*.npz")), desc=f"Generating label info for {split}"):
+    for npz_file in tqdm(
+        sorted(data_dir.glob("data/*.npz")), desc=f"Generating label info for {split}"
+    ):
         data = np.load(npz_file)
         filename = npz_file.stem
         label = (data["mask"].sum() > 0).astype(int)
@@ -160,7 +165,6 @@ def generate_label_info(data_dir: Path, split: str):
 
     df = pd.DataFrame(data_list)
     df.to_csv(data_dir / "label_info.csv", index=False)
-        
 
 
 def pad_to_square(arr):
@@ -204,7 +208,7 @@ if __name__ == "__main__":
         train_dir=train_dir,
         val_dir=val_dir,
         test_dir=test_dir,
-        num_train_aug = 2,
+        num_train_aug=2,
         visualize=True,
     )
     generate_label_info(data_dir, split="train")

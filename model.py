@@ -1,4 +1,5 @@
 import logging
+import os
 
 import torch
 import torch.nn as nn
@@ -6,8 +7,8 @@ import lightning as L
 import matplotlib.pyplot as plt
 import seaborn as sns
 import wandb
-from monai.losses import GeneralizedDiceLoss, DiceLoss, DiceCELoss, DiceFocalLoss
-from torch_flops import TorchFLOPsByFX
+import segmentation_models_pytorch as smp
+import segmentation_models_pytorch.utils as smp_utils
 from torchmetrics import (
     MetricCollection,
     Accuracy,
@@ -17,111 +18,83 @@ from torchmetrics import (
     Specificity,
     ConfusionMatrix,
 )
-import segmentation_models_pytorch.utils as smp_utils
 from torchmetrics.segmentation import DiceScore
+
+from embeddings import EncoderWrapper
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class ClassificationModel(L.LightningModule):
-    def __init__(self, encoder: None | nn.Module, input_dim: int, num_classes: int, freeze_encoder: bool = True):
+    def __init__(
+        self,
+        encoder: nn.Module,
+        input_dim: int,
+        num_classes: int,
+        freeze_encoder: bool,
+    ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder"])
-        self.num_classes = num_classes
-        self.encoder = encoder
-        self.model = nn.Linear(input_dim, num_classes)
 
-        self.freeze_encoder = freeze_encoder
-        if self.freeze_encoder and self.encoder is not None:
+        self.num_classes = num_classes
+
+        # network architecture
+        self.encoder = encoder
+        self.classifier = nn.Linear(input_dim, num_classes)
+
+        if freeze_encoder:
             for param in self.encoder.parameters():
                 param.requires_grad = False
-        
+
+        # loss function
         self.loss_fn = nn.BCEWithLogitsLoss()
+
+        # optimizer
         self.lr = 3e-4
 
+        # metrics
         self.val_metrics = MetricCollection(
             {
                 "accuracy": Accuracy(task="binary"),
-                "recall": Recall(task="binary"),
                 "f1": F1Score(task="binary"),
+                "recall": Recall(task="binary"),
                 "precision": Precision(task="binary"),
                 "specificity": Specificity(task="binary"),
-                "confmat": ConfusionMatrix(task="binary"),
-            }
+            },
+            prefix="val/",
         )
-        self.test_metrics = self.val_metrics.clone(prefix="test_")
+        self.test_metrics = self.val_metrics.clone(prefix="test/")
+        self.test_metrics.add_metrics({"confmat": ConfusionMatrix(task="binary")})
+
+        # HARDCODING: save test embeddings [1/3]
+        # self.embeddings = []
+        # self.embedding_labels = []
 
     def forward(self, x):
-        if self.encoder is not None:
-            x = self.encoder(x)
-        x = self.model(x)
+        x = self.encoder(x)
+        x = self.classifier(x)
         return x
 
-    # def on_fit_start(self):
-    #     n_total = sum(p.numel() for p in self.parameters())
-    #     n_trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
-    #     logger.info(f"Total: {n_total}, Trainable: {n_trainable}")
-
-    #     if self.encoder is not None:
-    #         model = nn.Sequential(
-    #             self.encoder,
-    #             self.model,
-    #         )
-    #     else:
-    #         model = self.model
-
-    #     if self.encoder is not None:
-    #         x = torch.randn(1, 3, 224, 224).cuda()
-    #     else:
-    #         x = torch.randn(1, 768).cuda()
-
-    #     with torch.no_grad():
-    #         for _ in range(20):
-    #             model(x)
-        
-    #     flops_counter = TorchFLOPsByFX(model)
-
-    #     flops_counter.propagate(x)
-    #     total_flops = flops_counter.print_total_flops(show=False)
-    #     max_memory = flops_counter.print_max_memory(show=False)
-
-    #     time_list = []
-    #     for _ in range(50):
-    #         flops_counter.propagate(x)
-    #         time_list.append(flops_counter.print_total_time(show=False))
-    #     average_time = sum(time_list) / len(time_list)
-
-    #     self.logger.experiment.log({"flops": total_flops, "max_memory": max_memory, "average_time": average_time})
-    #     logger.info(f"FLOPs: {total_flops}")
-    #     logger.info(f"Max Memory: {max_memory}")
-    #     logger.info(f"Average Time: {average_time}")
-
-
     def training_step(self, batch, batch_idx):
-        if self.encoder is None:
-            x = batch["embs"]
-        else:
-            x = batch["image"]
+        x = batch["image"]
         y = batch["label"]
 
         logits = self(x)
         loss = self.loss_fn(logits, y)
-        self.log("train_loss", loss, prog_bar=True)
+
+        self.log("train/loss", loss, prog_bar=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if self.encoder is None:
-            x = batch["embs"]
-        else:
-            x = batch["image"]
+        x = batch["image"]
         y = batch["label"]
 
         logits = self(x)
-
         loss = self.loss_fn(logits, y)
-        self.log("val_loss", loss, prog_bar=True)
+
+        self.log("val/loss", loss, prog_bar=True)
 
         probs = torch.sigmoid(logits)
         self.val_metrics.update(probs, y)
@@ -130,47 +103,33 @@ class ClassificationModel(L.LightningModule):
         results = self.val_metrics.compute()
         self.val_metrics.reset()
 
-        confmat = results.pop("confmat").cpu().numpy()
-        self.log_dict(results, prog_bar=True)
-        for i in range(2):
-            for j in range(2):
-                self.log(f"confusion_matrix_{i}_{j}", confmat[i, j])
-
-        fig, ax = plt.subplots()
-        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("True")
-        ax.set_title("Confusion Matrix")
-        self.logger.experiment.log(
-            {
-                "confusion_matrix": wandb.Image(fig),
-            }
-        )
-        plt.close(fig)
+        self.log("val/f1", results.pop("val/f1"), prog_bar=True)
+        self.log_dict(results)
 
     def test_step(self, batch, batch_idx):
-        if self.encoder is None:
-            x = batch["embs"]
-        else:
-            x = batch["image"]
+        x = batch["image"]
         y = batch["label"]
 
         logits = self(x)
-        loss = self.loss_fn(logits, y)
-        self.log("test_loss", loss, prog_bar=True)
 
         probs = torch.sigmoid(logits)
         self.test_metrics.update(probs, y)
+
+        # HARDCODING: save test embeddings [2/3]
+        # embeddings = self.encoder(x)
+        # embeddings = embeddings.detach().cpu()
+        # self.embeddings.append(embeddings)
+        # self.embedding_labels.append(y)
 
     def on_test_epoch_end(self):
         results = self.test_metrics.compute()
         self.test_metrics.reset()
 
-        confmat = results.pop("test_confmat").cpu().numpy()
+        confmat = results.pop("test/confmat").cpu().numpy()
         self.log_dict(results)
         for i in range(2):
             for j in range(2):
-                self.log(f"test_confusion_matrix_{i}_{j}", confmat[i, j])
+                self.log(f"test/confmat_{i}_{j}", confmat[i, j])
 
         fig, ax = plt.subplots()
         sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
@@ -179,157 +138,129 @@ class ClassificationModel(L.LightningModule):
         ax.set_title("Confusion Matrix")
         self.logger.experiment.log(
             {
-                "confusion_matrix": wandb.Image(fig),
+                "test/confmat": wandb.Image(fig),
             }
         )
         plt.close(fig)
+
+        # HARDCODING: save test embeddings [3/3]
+        # self.embeddings = torch.cat(self.embeddings, dim=0)
+        # self.embedding_labels = torch.cat(self.embedding_labels, dim=0)
+        # torch.save(self.embeddings, "embeddings.pt")
+        # torch.save(self.embedding_labels, "embedding_labels.pt")
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
 
 class SegmentationModel(L.LightningModule):
-    def __init__(self, encoder, transformer_width, num_classes, input_dim, init_filters=32, freeze_encoder=True):
+    def __init__(
+        self,
+        encoder: nn.Module,
+        input_dim: int,
+        num_classes: int,
+        freeze_encoder: bool,
+    ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder"])
-        self.num_classes = num_classes
-        self.encoder = encoder
-        assert self.encoder is None
-        self.freeze_encoder = freeze_encoder
-        self.model = UNETR(transformer_width, num_classes, input_dim, init_filters)
 
-        # self.loss_fn = DiceLoss(sigmoid=True)
-        self.loss_fn = GeneralizedDiceLoss(sigmoid=True)
-        # self.loss_fn = DiceFocalLoss(sigmoid=True)
-        # self.loss_fn = DiceCELoss(sigmoid=True)
-        # import segmentation_models_pytorch as smp
-        # self.loss_fn = smp.losses.DiceLoss(mode='multilabel', from_logits=True)
+        self.num_classes = num_classes
+
+        # network architecture
+        self.encoder = EncoderWrapper(self.encoder)
+        self.decoder = UNETR(input_dim, num_classes, input_dim=3, init_filters=32)
+
+        if freeze_encoder:
+            for param in self.encoder.parameters():
+                param.requires_grad = False
+
+        # loss function
+        self.loss_fn = smp.losses.DiceLoss(mode="multilabel", from_logits=True)
+
+        # optimizer
         self.lr = 3e-4
 
-        self.val_metrics = MetricCollection(
+        # validation step outputs
+        self.val_test_step_outputs = []
+
+        # metric
+        self.test_metrics = MetricCollection(
             {
                 "accuracy": Accuracy(task="binary"),
-                "recall": Recall(task="binary"),
                 "f1": F1Score(task="binary"),
+                "recall": Recall(task="binary"),
                 "precision": Precision(task="binary"),
                 "specificity": Specificity(task="binary"),
-                "confmat": ConfusionMatrix(task="binary"),
-            }
-        , prefix="val_")
-        self.dice_score = DiceScore(
-            num_classes=self.num_classes,
-            include_background=False,
+            },
+            prefix="test_",
         )
-        self.test_metrics = self.val_metrics.clone(prefix="test_")
-
-        self.validation_step_outputs = []
-        self.pixel_treshold = 1000
+        self.test_dice = DiceScore(
+            num_classes=num_classes,
+        )
 
     def forward(self, x):
-        if self.encoder is not None:
-            x = self.encoder(x)
-        x = self.model(x)
+        embs = self.encoder(x)
+        x = self.decoder([x, *embs.values()])
         return x
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_nb):
         x = batch["image"]
         y = batch["mask"]
-        embs = batch["embs"]
-        embs = [embs[i] for i in ["z3", "z6", "z9", "z12"]]
 
-        logits = self.forward([x, *embs])
-
+        logits = self(x)
         loss = self.loss_fn(logits, y)
-        self.log("train_loss", loss, prog_bar=True)
 
-        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(logits, y)
-        self.log('train_dsc', dsc, prog_bar=True)
+        dice = smp_utils.metrics.Fscore(activation="sigmoid")(logits, y)
+
+        self.log("train/loss", loss, prog_bar=True)
+        self.log("train/dice", dice, prog_bar=True)
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_nb):
         x = batch["image"]
         y = batch["mask"]
-        embs = batch["embs"]
 
-        logits = self([x, *embs.values()])
+        logits = self(x)
 
-        loss = self.loss_fn(logits, y)
-        self.log("val_loss", loss, prog_bar=True)
+        self.val_test_step_outputs.append((logits, y))
 
-        probs = torch.sigmoid(logits)
-        pred_label = ((probs > 0.5).sum((2, 3)) > self.pixel_treshold).to(torch.int64)
-        label = batch["label"].to(torch.int64)
-
-        self.val_metrics.update(pred_label, label)
-
-        pred_mask = (probs > 0.5).to(torch.int64)
-        self.dice_score.update(pred_mask, y)
-
-        # validation
-        self.validation_step_outputs.append((logits.detach().cpu(), y.detach().cpu()))
+        return logits, y
 
     def on_validation_epoch_end(self):
-        results = self.val_metrics.compute()
-        self.val_metrics.reset()
-
-        dsc = self.dice_score.compute()
-        self.dice_score.reset()
-
-        self.log("val_dsc", dsc, prog_bar=True)
-
-        confmat = results.pop("val_confmat").cpu().numpy()
-        self.log_dict(results, prog_bar=True)
-        for i in range(2):
-            for j in range(2):
-                self.log(f"val_confusion_matrix_{i}_{j}", confmat[i, j])
-
-        fig, ax = plt.subplots()
-        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("True")
-        ax.set_title("Confusion Matrix")
-        self.logger.experiment.log(
-            {
-                "val_confusion_matrix": wandb.Image(fig),
-            }
-        )
-        plt.close(fig)
-
-        # validation
-        logits = []
+        preds = []
         targets = []
 
-        for outs in self.validation_step_outputs:
-            logits.append(outs[0])
+        for outs in self.val_test_step_outputs:
+            preds.append(outs[0])
             targets.append(outs[1])
-        self.validation_step_outputs.clear()
-        
-        logits = torch.cat(logits)
-        targets = torch.cat(targets)
-        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(logits, targets)
-        self.log("val_smp", dsc, prog_bar=True)
 
-    def test_step(self, batch, batch_idx):
+        preds = torch.cat(preds).cpu()
+        targets = torch.cat(targets).cpu()
+
+        loss = self.criterion(preds, targets)
+
+        dsc = smp_utils.metrics.Fscore(activation="sigmoid")(preds, targets)
+
+        self.log("val/loss", loss, prog_bar=True)
+        self.log("val/dsc", dsc, prog_bar=True)
+
+        self.val_test_step_outputs.clear()
+
+    def test_step(self, batch, batch_nb):
         x = batch["image"]
-        embs = batch["embs"]
         y = batch["mask"]
 
-        logits = self([x, *embs.values()])
-        loss = self.loss_fn(logits, y)
-        self.log("test_loss", loss, prog_bar=True)
+        logits = self(x)
 
-        probs = torch.sigmoid(logits)
-        pred_label = ((probs > 0.5).sum((2, 3)) > self.pixel_treshold).to(torch.int64)
-        label = batch["label"].to(torch.int64)
+        self.val_test_step_outputs.append((logits, y))
 
-        self.test_metrics.update(pred_label, label)
+        probs = torch.sigmoid(preds)
+        cls_preds = ((probs > 0.5).sum((2, 3)) >= 500).int()
+        cls_targets = (y.sum((2, 3)) > 0).int()
 
-        pred_mask = (probs > 0.5).to(torch.int64)
-        self.dice_score.update(pred_mask, y)
-
-        # validation
-        self.validation_step_outputs.append((logits.detach().cpu(), y.detach().cpu()))
+        self.test_metrics.update(cls_preds, cls_targets)
+        self.test_dice.update((probs > 0.5).int(), y.int())
 
     def on_test_epoch_end(self):
         results = self.test_metrics.compute()
@@ -337,42 +268,73 @@ class SegmentationModel(L.LightningModule):
 
         dsc = self.dice_score.compute()
         self.dice_score.reset()
-        self.log("test_dsc", dsc, prog_bar=True)
-
-        confmat = results.pop("test_confmat").cpu().numpy()
         self.log_dict(results)
-        for i in range(2):
-            for j in range(2):
-                self.log(f"test_confusion_matrix_{i}_{j}", confmat[i, j])
 
-        fig, ax = plt.subplots()
-        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("True")
-        ax.set_title("Confusion Matrix")
-        self.logger.experiment.log(
-            {
-                "test_confusion_matrix": wandb.Image(fig),
-            }
-        )
-        plt.close(fig)
-
-        # validation
         preds = []
         targets = []
 
-        for outs in self.validation_step_outputs:
+        for outs in self.val_test_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
-        self.validation_step_outputs.clear()
-        
-        preds = torch.cat(preds)
-        targets = torch.cat(targets)
-        dsc = smp_utils.metrics.Fscore(activation='sigmoid')(preds, targets)
-        self.log("test_smp", dsc, prog_bar=True)
+        preds = torch.cat(preds).cpu()
+        targets = torch.cat(targets).cpu()
+
+        test_dice = smp_utils.metrics.Fscore(activation="sigmoid")(preds, targets)
+        self.log("test/dice", test_dice)
+
+        cls_results = (torch.sigmoid(preds) > 0.5).sum(dim=(2, 3))
+        cls_targets = (targets.sum((2, 3)) > 0).int()
+        cls_preds = (cls_results > 500).int()
+
+        self.task = "binary"
+        acc = Accuracy(
+            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
+        )(cls_preds, cls_targets)
+        f1 = F1Score(
+            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
+        )(cls_preds, cls_targets)
+        recall = Recall(
+            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
+        )(cls_preds, cls_targets)
+        precision = Precision(
+            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
+        )(cls_preds, cls_targets)
+
+        self.test_metrics_fly = {
+            "test/acc_500": acc,
+            "test/f1_500": f1,
+            "test/recall_500": recall,
+            "test/precision_500": precision,
+        }
+
+        self.val_test_step_outputs.clear()
+
+        # save up to 'counts' examples of predictions
+        # from pathlib import Path
+
+        # import torchvision.transforms.functional as TF
+
+        # example_out_folder = Path("outputs/segmentation_examples")
+        # example_out_folder.mkdir(exists_ok=True)
+
+        # empty_counts = 0
+        # for i in range(preds.size(0)):
+        #     pred_mask = (torch.sigmoid(preds[i]) > 0.5).float()
+        #     gt_mask = targets[i]
+        #     if gt_mask.max() == 1:
+        #         pred_save_path = example_out_folder / f"{i}_pred.png"
+        #         gt_save_path = example_out_folder / f"{i}_gt.png"
+        #         TF.to_pil_image(pred_mask).save(pred_save_path)
+        #         TF.to_pil_image(gt_mask).save(gt_save_path)
+        #     elif empty_counts < 50:
+        #             pred_save_path = example_out_folder / f"empty_{i}_pred.png"
+        #             gt_save_path = example_out_folder / f"empty_{i}_gt.png"
+        #             TF.to_pil_image(pred_mask).save(pred_save_path)
+        #             TF.to_pil_image(gt_mask).save(gt_save_path)
+        #         empty_counts += 1
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr)
+        return torch.optim.AdamW(trainable_params, lr=self.lr)
 
 
 """
@@ -380,10 +342,19 @@ REFERENCES:
 - https://github.com/tamasino52/UNETR/blob/main/unetr.py#L171
 """
 
+
 class SingleDeconv2DBlock(nn.Module):
     def __init__(self, in_planes, out_planes, groups=1):
         super().__init__()
-        self.block = nn.ConvTranspose2d(in_planes, out_planes, kernel_size=2, stride=2, padding=0, output_padding=0, groups=groups)
+        self.block = nn.ConvTranspose2d(
+            in_planes,
+            out_planes,
+            kernel_size=2,
+            stride=2,
+            padding=0,
+            output_padding=0,
+            groups=groups,
+        )
 
     def forward(self, x):
         return self.block(x)
@@ -392,8 +363,14 @@ class SingleDeconv2DBlock(nn.Module):
 class SingleConv2DBlock(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, groups=1):
         super().__init__()
-        self.block = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=1,
-                               padding=((kernel_size - 1) // 2), groups=groups)
+        self.block = nn.Conv2d(
+            in_planes,
+            out_planes,
+            kernel_size=kernel_size,
+            stride=1,
+            padding=((kernel_size - 1) // 2),
+            groups=groups,
+        )
 
     def forward(self, x):
         return self.block(x)
@@ -431,6 +408,7 @@ class Deconv2DBlock(nn.Module):
     def forward(self, x):
         return self.block(x)
 
+
 class SingleDWConv2DBlock(nn.Module):
     def __init__(self, in_planes, out_planes):
         super().__init__()
@@ -442,67 +420,61 @@ class SingleDWConv2DBlock(nn.Module):
     def forward(self, x):
         return self.block(x)
 
+
 class UNETR(nn.Module):
     def __init__(self, transformer_width, output_dim, input_dim, init_filters):
         super().__init__()
 
-        self.decoder0 = \
-            nn.Sequential(
-                Conv2DBlock(input_dim, init_filters, 3),
-                Conv2DBlock(init_filters, init_filters, 3)
-            )
+        self.decoder0 = nn.Sequential(
+            Conv2DBlock(input_dim, init_filters, 3),
+            Conv2DBlock(init_filters, init_filters, 3),
+        )
 
-        self.decoder3 = \
-            nn.Sequential(
-                Deconv2DBlock(transformer_width, 8*init_filters),
-                Deconv2DBlock(8*init_filters, 4*init_filters),
-                Deconv2DBlock(4*init_filters, 2*init_filters)
-            )
+        self.decoder3 = nn.Sequential(
+            Deconv2DBlock(transformer_width, 8 * init_filters),
+            Deconv2DBlock(8 * init_filters, 4 * init_filters),
+            Deconv2DBlock(4 * init_filters, 2 * init_filters),
+        )
 
-        self.decoder6 = \
-            nn.Sequential(
-                Deconv2DBlock(transformer_width, 8*init_filters),
-                Deconv2DBlock(8*init_filters, 4*init_filters),
-            )
+        self.decoder6 = nn.Sequential(
+            Deconv2DBlock(transformer_width, 8 * init_filters),
+            Deconv2DBlock(8 * init_filters, 4 * init_filters),
+        )
 
-        self.decoder9 = \
-            Deconv2DBlock(transformer_width, 8*init_filters)
+        self.decoder9 = Deconv2DBlock(transformer_width, 8 * init_filters)
 
-        self.decoder12_upsampler = \
-            SingleDWConv2DBlock(transformer_width, 8*init_filters)
+        self.decoder12_upsampler = SingleDWConv2DBlock(
+            transformer_width, 8 * init_filters
+        )
 
-        self.decoder9_upsampler = \
-            nn.Sequential(
-                Conv2DBlock(16*init_filters, 8*init_filters),
-                Conv2DBlock(8*init_filters, 8*init_filters),
-                Conv2DBlock(8*init_filters, 8*init_filters),
-                SingleDWConv2DBlock(8*init_filters, 4*init_filters)
-            )
+        self.decoder9_upsampler = nn.Sequential(
+            Conv2DBlock(16 * init_filters, 8 * init_filters),
+            Conv2DBlock(8 * init_filters, 8 * init_filters),
+            Conv2DBlock(8 * init_filters, 8 * init_filters),
+            SingleDWConv2DBlock(8 * init_filters, 4 * init_filters),
+        )
 
-        self.decoder6_upsampler = \
-            nn.Sequential(
-                Conv2DBlock(8*init_filters, 4*init_filters),
-                Conv2DBlock(4*init_filters, 4*init_filters),
-                SingleDWConv2DBlock(4*init_filters, 2*init_filters)
-            )
+        self.decoder6_upsampler = nn.Sequential(
+            Conv2DBlock(8 * init_filters, 4 * init_filters),
+            Conv2DBlock(4 * init_filters, 4 * init_filters),
+            SingleDWConv2DBlock(4 * init_filters, 2 * init_filters),
+        )
 
-        self.decoder3_upsampler = \
-            nn.Sequential(
-                Conv2DBlock(4*init_filters, 2*init_filters),
-                Conv2DBlock(2*init_filters, 2*init_filters),
-                SingleDWConv2DBlock(2*init_filters, init_filters)
-            )
+        self.decoder3_upsampler = nn.Sequential(
+            Conv2DBlock(4 * init_filters, 2 * init_filters),
+            Conv2DBlock(2 * init_filters, 2 * init_filters),
+            SingleDWConv2DBlock(2 * init_filters, init_filters),
+        )
 
-        self.decoder0_header = \
-            nn.Sequential(
-                Conv2DBlock(2*init_filters, init_filters),
-                Conv2DBlock(init_filters, init_filters),
-                SingleConv2DBlock(init_filters, output_dim, 1)
-            )
-    
+        self.decoder0_header = nn.Sequential(
+            Conv2DBlock(2 * init_filters, init_filters),
+            Conv2DBlock(init_filters, init_filters),
+            SingleConv2DBlock(init_filters, output_dim, 1),
+        )
+
     def forward(self, x):
         z0, z3, z6, z9, z12 = x
-        
+
         # print(z0.shape, z3.shape, z6.shape, z9.shape, z12.shape)
         z12 = self.decoder12_upsampler(z12)
         z9 = self.decoder9(z9)

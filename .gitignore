@@ -1,13 +1,13 @@
 __pycache__
 data
-experiment_logs
-fetalclip
-logs
-wandb
-outputs
+output*
 
 .*
-*.sbatch
-*.json
-*.pt
+*.code-workspace
 *.ipynb
+*.json
+*.png
+*.pt
+*.pth
+*.sbatch
+*.sh

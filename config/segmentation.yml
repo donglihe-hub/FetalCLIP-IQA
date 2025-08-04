@@ -1,0 +1,23 @@
+model_name: fetalclip
+task: segmentation
+data_dir: data/acouslic-ai/workshop
+output_dir: outputs
+fetalclip_config_path: FetalCLIP_config.json
+fetalclip_weights_path: FetalCLIP_weights.pt
+
+# dataloader arguments
+num_workers: 8
+batch_size: 32
+
+# trainer arguments
+max_epochs: 1
+
+# number of trials
+num_trials: 1
+
+# data augmentation
+use_augmentation: true
+
+# network settings
+freeze_encoder: true
+use_lora: true

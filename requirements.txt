@@ -1,24 +1,27 @@
-albumentations
+albumentationsx
+jsonargparse
 lightning
-matplotlib
-monai
 numpy
-nvitop
-opencv-python
 open-clip-torch
+rich
 pandas
 pillow
 PyYAML
-scikit-learn
-seaborn
 SimpleITK
-tabulate
-tensorboard
 timm
 torch
-torch_flops
 torchmetrics
 torchvision
 tqdm
 wandb
-ipykernel
+
+# visualization
+seaborn
+umap-learn
+matplotlib
+scikit-learn
+
+# personal use
+# nvitop
+# ipykernel
+# black
