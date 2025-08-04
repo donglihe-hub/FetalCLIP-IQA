@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 Download the raw dataset (v1.1) from:
 
-https://zenodo.org/records/12697994
+- [ACOUSLIC-AI dataset](https://zenodo.org/records/12697994)
 
 Place the downloaded zip file in the project root directory, then run:
 
@@ -68,6 +68,8 @@ unzip acouslic-ai-train-set_preprocessed.zip
 cd ../..
 ```
 
+After extraction, the folder structure should look like:
+
 ```
 data/
 └── acouslic-ai/
@@ -84,11 +86,11 @@ data/
 
 ## 2. Download Weights and Config
 
-Download model weights and FetalCLIP config file:
+Download FetalCLIP model weights:
 
 - [FetalCLIP weights](https://mbzuaiac-my.sharepoint.com/:f:/g/personal/fadillah_maani_mbzuai_ac_ae/EspGREsyuOtEpxt36RoEUBoB6jtlsvPeoiDTBC1qX8WdZQ?e=uAbuyv)
 
-Place both files under the project root directory.
+Place the weight under the project root directory.
 
 ---
 
@@ -103,7 +105,6 @@ python preprocess.py
 ```
 
 After preprocessing, the data folder structure will be:
-
 
 ```
 data/
@@ -156,17 +157,17 @@ python main.py --config config/segmentation.yml
 ---
 
 ## Results
-| Architecture | Models           | Accuracy ↑          | F1 Score ↑          | Precision ↑          | Recall ↑            | # Trainable Parameters |
-|--------------|------------------|---------------------|---------------------|----------------------|---------------------|------------------------|
-| **CNN**      | DenseNet         | 0.9516 ± 0.002      | 0.7024 ± 0.028      | _0.7805_ ± 0.026     | 0.6420 ± 0.059      | 7.0 M                  |
-|              | EfficientNet     | 0.9537 ± 0.004      | 0.7253 ± 0.030      | 0.7725 ± 0.025       | 0.6855 ± 0.053      | 4.0 M                  |
-|              | VGG              | 0.9510 ± 0.002      | 0.7084 ± 0.021      | 0.7580 ± 0.023       | 0.6671 ± 0.048      | 134 M                  |
-| **Transformer** | Swin           | 0.9565 ± 0.003      | 0.7429 ± 0.039      | **0.7864** ± 0.032   | 0.7113 ± 0.087      | 1.7 M                  |
-|              | DEIT             | 0.9554 ± 0.001      | 0.7466 ± 0.014      | 0.7619 ± 0.035       | 0.7363 ± 0.059      | 2.4 M                  |
-|              | ViT<sub>400M</sub>          | _0.9560_ ± 0.003    | _0.7506_ ± 0.019    | 0.7657 ± 0.042       | **0.7417** ± 0.067  | 2.4 M                  |
-|              | FetalCLIP<sub>CLS</sub>   | **0.9575** ± 0.001  | **0.7570** ± 0.007  | 0.7782 ± 0.034       | _0.7397_ ± 0.041    | 2.4 M                  |
+| Architecture    | Models                  | Accuracy    | F1 Score    | Precision    | Recall      | # Trainable<br>Parameters |
+|-----------------|-------------------------|-------------|-------------|--------------|-------------|-------|
+| **CNN**         | DenseNet                | 0.9516      | 0.7024      | 0.7805       | 0.6420      | 7.0 M |
+|                 | EfficientNet            | 0.9537      | 0.7253      | 0.7725       | 0.6855      | 4.0 M |
+|                 | VGG                     | 0.9510      | 0.7084      | 0.7580       | 0.6671      | 134 M |
+| **Transformer** | Swin                    | 0.9565      | 0.7429      | **0.7864**   | 0.7113      | 1.7 M |
+|                 | DEIT                    | 0.9554      | 0.7466      | 0.7619       | 0.7363      | 2.4 M |
+|                 | ViT<sub>400M</sub>      | 0.9560      | 0.7506      | 0.7657       | **0.7417**  | 2.4 M |
+|                 | FetalCLIP<sub>CLS</sub> | **0.9575**  | **0.7570**  | 0.7782       | 0.7397      | 2.4 M |
 
-*Table: Model performance on fetal ultrasound image quality assessment (IQA). Metrics reported as mean ± standard deviation over five runs. Best scores are **bolded**, second-best are _underlined_.*
+Model performance on fetal ultrasound image quality assessment (IQA). Metrics reported as mean over five runs. Best scores are **bolded**.
 
 ## Related Articles
 
