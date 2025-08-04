@@ -162,7 +162,16 @@ def main(config: dict[str, Union[str, Path]]):
     num_trials = config.num_trials
     num_classes = 1  # fixed - binary classification
 
+    max_epochs = config.max_epochs
+
     torch.set_float32_matmul_precision("high")
+
+    # debug mode
+    limit_batches = 1.0
+    if config.debug_mode:
+        limit_batches = 5
+    num_trials = 2
+    max_epochs = 1
 
     for trial in range(num_trials):
         logger.info(
@@ -199,7 +208,7 @@ def main(config: dict[str, Union[str, Path]]):
         checkpoint = ModelCheckpoint(
             monitor="val/loss",
             mode="min",
-            dirpath=exp_output_folder / "checkpoints" /str(trial),
+            dirpath=exp_output_folder / "checkpoints" / f"trial-{str(trial)}",
         )
         # early stopping is not used but kept for completeness
         earlystop = EarlyStopping(monitor="val/loss", patience=5, mode="min")
@@ -215,14 +224,19 @@ def main(config: dict[str, Union[str, Path]]):
             tags=[f"trial_{trial}", task, model_name, run_id],
             settings=wandb.Settings(reinit="finish_previous")
         )
+        
 
         trainer = L.Trainer(
             devices=1,
             accelerator="gpu",
-            max_epochs=config.max_epochs,
+            max_epochs=max_epochs,
             logger=wandb_logger,
             callbacks=callbacks,
             precision="bf16-mixed",
+            # only for debug purpose
+            limit_train_batches=limit_batches,
+            limit_val_batches=limit_batches,
+            limit_test_batches=limit_batches,
         )
 
         trainer.fit(model, train_dataloader, val_dataloader)

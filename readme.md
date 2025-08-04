@@ -48,9 +48,9 @@ data/
     ├── images/
     │   └── stacked_fetal_ultrasound/
     │       └── *.mha
-    ├── masks/
-    │   └── stacked_fetal_abdomen/
-    │       └── *.mha
+    └── masks/
+        └── stacked_fetal_abdomen/
+            └── *.mha
 ```
 
 ### Option B: Preprocessed Dataset
@@ -145,13 +145,13 @@ Each `.npz` file contains:
 python main.py --config config/classification.yml
 ```
 
+Modify the `model_name` field in the YAML config file to experiment with different models.
+
 ### Segmentation
 
 ```bash
 python main.py --config config/segmentation.yml
 ```
-
-Modify the `model_name` field in the YAML config file to experiment with different models.
 
 ---
 

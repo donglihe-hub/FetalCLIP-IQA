@@ -1,5 +1,4 @@
 import logging
-import os
 
 import torch
 import torch.nn as nn
@@ -18,7 +17,6 @@ from torchmetrics import (
     Specificity,
     ConfusionMatrix,
 )
-from torchmetrics.segmentation import DiceScore
 
 from embeddings import EncoderWrapper
 
@@ -169,7 +167,7 @@ class SegmentationModel(L.LightningModule):
         self.num_classes = num_classes
 
         # network architecture
-        self.encoder = EncoderWrapper(self.encoder)
+        self.encoder = EncoderWrapper(encoder)
         self.decoder = UNETR(input_dim, num_classes, input_dim=3, init_filters=32)
 
         if freeze_encoder:
@@ -193,12 +191,13 @@ class SegmentationModel(L.LightningModule):
                 "recall": Recall(task="binary"),
                 "precision": Precision(task="binary"),
                 "specificity": Specificity(task="binary"),
+                "confmat": ConfusionMatrix(task="binary"),
             },
-            prefix="test_",
+            prefix="test/",
         )
-        self.test_dice = DiceScore(
-            num_classes=num_classes,
-        )
+
+        # threshold
+        self.threshold = 224 * 224 * 0.01  # = 501
 
     def forward(self, x):
         embs = self.encoder(x)
@@ -232,7 +231,6 @@ class SegmentationModel(L.LightningModule):
     def on_validation_epoch_end(self):
         preds = []
         targets = []
-
         for outs in self.val_test_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
@@ -240,12 +238,11 @@ class SegmentationModel(L.LightningModule):
         preds = torch.cat(preds).cpu()
         targets = torch.cat(targets).cpu()
 
-        loss = self.criterion(preds, targets)
-
-        dsc = smp_utils.metrics.Fscore(activation="sigmoid")(preds, targets)
+        loss = self.loss_fn(preds, targets)
+        dice = smp_utils.metrics.Fscore(activation="sigmoid")(preds, targets)
 
         self.log("val/loss", loss, prog_bar=True)
-        self.log("val/dsc", dsc, prog_bar=True)
+        self.log("val/dice", dice, prog_bar=True)
 
         self.val_test_step_outputs.clear()
 
@@ -257,61 +254,52 @@ class SegmentationModel(L.LightningModule):
 
         self.val_test_step_outputs.append((logits, y))
 
-        probs = torch.sigmoid(preds)
-        cls_preds = ((probs > 0.5).sum((2, 3)) >= 500).int()
+        probs = torch.sigmoid(logits)
+        print(probs.shape, y.shape)
+        print("max, min values of probs and y:")
+        print(probs.max(), probs.min(), y.max(), y.min())
+        cls_preds = ((probs > 0.5).sum((2, 3)) >= self.threshold).int()
         cls_targets = (y.sum((2, 3)) > 0).int()
 
         self.test_metrics.update(cls_preds, cls_targets)
-        self.test_dice.update((probs > 0.5).int(), y.int())
 
     def on_test_epoch_end(self):
         results = self.test_metrics.compute()
         self.test_metrics.reset()
 
-        dsc = self.dice_score.compute()
-        self.dice_score.reset()
+        confmat = results.pop("test/confmat").cpu().numpy()
         self.log_dict(results)
+        for i in range(2):
+            for j in range(2):
+                self.log(f"test/confmat_{i}_{j}", confmat[i, j])
+
+        fig, ax = plt.subplots()
+        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        ax.set_title("Confusion Matrix")
+        self.logger.experiment.log(
+            {
+                "test/confmat": wandb.Image(fig),
+            }
+        )
+        plt.close(fig)
 
         preds = []
         targets = []
-
         for outs in self.val_test_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
+        
         preds = torch.cat(preds).cpu()
         targets = torch.cat(targets).cpu()
 
         test_dice = smp_utils.metrics.Fscore(activation="sigmoid")(preds, targets)
         self.log("test/dice", test_dice)
 
-        cls_results = (torch.sigmoid(preds) > 0.5).sum(dim=(2, 3))
-        cls_targets = (targets.sum((2, 3)) > 0).int()
-        cls_preds = (cls_results > 500).int()
-
-        self.task = "binary"
-        acc = Accuracy(
-            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
-        )(cls_preds, cls_targets)
-        f1 = F1Score(
-            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
-        )(cls_preds, cls_targets)
-        recall = Recall(
-            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
-        )(cls_preds, cls_targets)
-        precision = Precision(
-            task=self.task, num_classes=self.num_classes, top_k=1, average="macro"
-        )(cls_preds, cls_targets)
-
-        self.test_metrics_fly = {
-            "test/acc_500": acc,
-            "test/f1_500": f1,
-            "test/recall_500": recall,
-            "test/precision_500": precision,
-        }
-
         self.val_test_step_outputs.clear()
 
-        # save up to 'counts' examples of predictions
+        ## save predicted masks and ground truth masks for visualization
         # from pathlib import Path
 
         # import torchvision.transforms.functional as TF
@@ -336,7 +324,7 @@ class SegmentationModel(L.LightningModule):
         #         empty_counts += 1
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(trainable_params, lr=self.lr)
+        return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
 
 """

@@ -21,3 +21,6 @@ use_augmentation: true
 # network settings
 freeze_encoder: true
 use_lora: true
+
+# for debug purpose only
+debug_mode: false

@@ -13,7 +13,7 @@ batch_size: 32
 max_epochs: 5
 
 # number of trials
-num_trials: 2
+num_trials: 5
 
 # data augmentation
 use_augmentation: true
@@ -21,3 +21,6 @@ use_augmentation: true
 # network settings
 freeze_encoder: true
 use_lora: true
+
+# for debug purpose only
+debug_mode: false

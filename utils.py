@@ -22,6 +22,7 @@ class Settings:
         use_augmentation: bool = True,
         freeze_encoder: bool = True,
         use_lora: bool = True,
+        debug_mode: bool = False,
     ):
         """
         Settings for FetalCLIP model training and evaluation.
@@ -67,6 +68,7 @@ class Settings:
         self.use_augmentation = use_augmentation
         self.freeze_encoder = freeze_encoder
         self.use_lora = use_lora
+        self.debug_mode = debug_mode
 
     def __getitem__(self, key):
         return getattr(self, key)
