@@ -3,7 +3,7 @@
 This repository contains code for assessing fetal ultrasound image quality using the ACOUSLIC-AI 2024 blind-sweep dataset.
 
 
-# Requirements
+## Requirements
 
 - Python 3.9 or higher
 
@@ -14,9 +14,9 @@ pip install -r requirements.txt
 ```
 
 
-# 1. Download Data
+## 1. Download Data
 
-## Option A: Download Raw Dataset
+### Option A: Download Raw Dataset
 
 We use the [ACOUSLIC-AI dataset](https://zenodo.org/records/12697994). You can download it by running:
 
@@ -39,7 +39,7 @@ data/
             └── *.mha
 ```
 
-## Option B: Download Preprocessed Dataset (Recommended)
+### Option B: Download Preprocessed Dataset (Recommended)
 Downloading the raw dataset may take hours based on our experience. To save time, we provide a link to the preprocessed data:
 
 [Preprocessed Acouslic AI dataset](https://mbzuaiac-my.sharepoint.com/:u:/g/personal/dongli_he_mbzuai_ac_ae/ERaJuil1b-pFqjfykMSb_oUB1lvFmLc_UGtA3pFqmCwHSQ?e=dOhbTA)
@@ -75,7 +75,7 @@ Place the weight under the project root directory.
 
 ## 3. Preprocessing
 
-**Skip this step if using preprocessed data.**
+**Skip this step if you use the preprocessed dataset.**
 
 To preprocess the raw data, including train, validation, and test splits as well as data augmentation, run:
 
@@ -116,8 +116,6 @@ Each `.npz` file contains:
 }
 ```
 
----
-
 ## 4. Reproduce Experiments
 
 ### Classification
@@ -133,8 +131,6 @@ Modify the `model_name` field in the YAML config file to experiment with differe
 ```bash
 python main.py --config config/segmentation.yml
 ```
-
----
 
 ## Results
 | Architecture    | Models                  | Accuracy    | F1 Score    | Precision    | Recall      | # Trainable<br>Parameters |
