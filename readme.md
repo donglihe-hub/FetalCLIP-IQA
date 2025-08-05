@@ -40,19 +40,14 @@ data/
 ```
 
 ## Option B: Download Preprocessed Dataset (Recommended)
-Downloading the raw dataset may take several hours based on our experience. To save time, we provide a link to the preprocessed data:
+Downloading the raw dataset may take hours based on our experience. To save time, we provide a link to the preprocessed data:
 
-(link coming soon)
+[Preprocessed Acouslic AI dataset](https://mbzuaiac-my.sharepoint.com/:u:/g/personal/dongli_he_mbzuai_ac_ae/ERaJuil1b-pFqjfykMSb_oUB1lvFmLc_UGtA3pFqmCwHSQ?e=dOhbTA)
 
 Once downloaded, place the zip file in the project’s root directory and run:
 
 ```bash
-mkdir -p data/acouslic-ai
-mv acouslic-ai-train-set_preprocessed.zip data/acouslic-ai/
-cd data/acouslic-ai
 unzip acouslic-ai-train-set_preprocessed.zip
-mv acouslic-ai-train-set_preprocessed workshop
-cd ../..
 ```
 
 After running the script, the data directory should have the following structure:
@@ -65,8 +60,9 @@ data/
         │   └── *.npz
         ├── val/
         │   └── *.npz
-        └── test/
-            └── *.npz
+        ├── test/
+        │   └── *.npz
+        └── meta_info.csv
 ```
 
 ## 2. Download Weights and Config

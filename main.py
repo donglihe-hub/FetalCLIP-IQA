@@ -173,8 +173,8 @@ def main(config: dict[str, Union[str, Path]]):
     limit_batches = 1.0
     if config.debug_mode:
         limit_batches = 5
-    num_trials = 2
-    max_epochs = 1
+        num_trials = 2
+        max_epochs = 1
 
     for trial in range(num_trials):
         logger.info(f"Starting trial {trial + 1}/{num_trials}")
