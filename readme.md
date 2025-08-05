@@ -2,15 +2,10 @@
 
 This repository contains code for assessing fetal ultrasound image quality using the ACOUSLIC-AI 2024 blind-sweep dataset.
 
----
 
-## 🔧 Installation
-
-### Requirements
+# Requirements
 
 - Python 3.9 or higher
-
-### Setup
 
 Install required Python packages:
 
@@ -18,27 +13,18 @@ Install required Python packages:
 pip install -r requirements.txt
 ```
 
----
 
-## 1. Download Data
+# 1. Download Data
 
-### Option A: Raw Dataset
+## Option A: Download Raw Dataset
 
-Download the raw dataset (v1.1) from:
+We use the [ACOUSLIC-AI dataset](https://zenodo.org/records/12697994). You can download it by running:
 
-- [ACOUSLIC-AI dataset](https://zenodo.org/records/12697994)
-
-Place the downloaded zip file in the project root directory, then run:
-
-```bash
-mkdir -p data/acouslic-ai
-mv acouslic-ai-train-set.zip data/acouslic-ai/
-cd data/acouslic-ai
-unzip acouslic-ai-train-set.zip
-cd ../..
+```sh
+bash download_data.sh
 ```
 
-After extraction, the folder structure should look like:
+After running the script, the data directory should have the following structure:
 
 ```
 data/
@@ -53,22 +39,23 @@ data/
             └── *.mha
 ```
 
-### Option B: Preprocessed Dataset
-Alternatively, download the preprocessed data from:
+## Option B: Download Preprocessed Dataset (Recommended)
+Downloading the raw dataset may take several hours based on our experience. To save time, we provide a link to the preprocessed data:
 
-  (update soon)
+(link coming soon)
 
-Place the zip file in the project root directory, then run:
+Once downloaded, place the zip file in the project’s root directory and run:
 
 ```bash
 mkdir -p data/acouslic-ai
 mv acouslic-ai-train-set_preprocessed.zip data/acouslic-ai/
 cd data/acouslic-ai
 unzip acouslic-ai-train-set_preprocessed.zip
+mv acouslic-ai-train-set_preprocessed workshop
 cd ../..
 ```
 
-After extraction, the folder structure should look like:
+After running the script, the data directory should have the following structure:
 
 ```
 data/
@@ -82,8 +69,6 @@ data/
             └── *.npz
 ```
 
----
-
 ## 2. Download Weights and Config
 
 Download FetalCLIP model weights:
@@ -92,13 +77,11 @@ Download FetalCLIP model weights:
 
 Place the weight under the project root directory.
 
----
-
 ## 3. Preprocessing
 
 **Skip this step if using preprocessed data.**
 
-To preprocess raw data (train/val/test split and augmentation), run:
+To preprocess the raw data, including train, validation, and test splits as well as data augmentation, run:
 
 ```bash
 python preprocess.py
@@ -180,5 +163,16 @@ Model performance on fetal ultrasound image quality assessment (IQA). Metrics re
       archivePrefix={arXiv},
       primaryClass={cs.CV},
       url={https://arxiv.org/abs/2507.22802}, 
+}
+```
+```bibtex
+@misc{maani2025fetalclipvisuallanguagefoundationmodel,
+      title={FetalCLIP: A Visual-Language Foundation Model for Fetal Ultrasound Image Analysis}, 
+      author={Fadillah Maani and Numan Saeed and Tausifa Saleem and Zaid Farooq and Hussain Alasmawi and Werner Diehl and Ameera Mohammad and Gareth Waring and Saudabi Valappi and Leanne Bricker and Mohammad Yaqub},
+      year={2025},
+      eprint={2502.14807},
+      archivePrefix={arXiv},
+      primaryClass={eess.IV},
+      url={https://arxiv.org/abs/2502.14807}, 
 }
 ```
