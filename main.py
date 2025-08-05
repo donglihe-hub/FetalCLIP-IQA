@@ -170,11 +170,12 @@ def main(config: dict[str, Union[str, Path]]):
     torch.set_float32_matmul_precision("high")
 
     # debug mode
-    limit_batches = 1.0
+    limit_batches = None
     if config.debug_mode:
         limit_batches = 5
         num_trials = 2
         max_epochs = 1
+        logger.info("Debug mode is ON. Limiting batches, epochs, and num of trials.")
 
     for trial in range(num_trials):
         logger.info(f"Starting trial {trial + 1}/{num_trials}")
