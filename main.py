@@ -11,7 +11,7 @@ import pandas as pd
 import timm
 import torch
 import torchvision.transforms as T
-import wandb
+# import wandb
 from jsonargparse import auto_cli
 from lightning.pytorch.callbacks import ModelCheckpoint, Timer, EarlyStopping
 from lightning.pytorch.loggers import WandbLogger
@@ -217,20 +217,20 @@ def main(config: dict[str, Union[str, Path]]):
         callbacks = [checkpoint, earlystop, timer]
 
         # wandb logger
-        wandb_logger = WandbLogger(
-            project="FetalCLIP-IQA",
-            group=f"{task}/{model_name}",
-            name=f"{run_id}-trial_{trial}",
-            save_dir=exp_output_folder,
-            tags=[f"trial_{trial}", task, model_name, run_id],
-            settings=wandb.Settings(reinit="finish_previous"),
-        )
+        # wandb_logger = WandbLogger(
+        #     project="FetalCLIP-IQA",
+        #     group=f"{task}/{model_name}",
+        #     name=f"{run_id}-trial_{trial}",
+        #     save_dir=exp_output_folder,
+        #     tags=[f"trial_{trial}", task, model_name, run_id],
+        #     settings=wandb.Settings(reinit="finish_previous"),
+        # )
 
         trainer = L.Trainer(
             devices=1,
             accelerator="gpu",
             max_epochs=max_epochs,
-            logger=wandb_logger,
+            logger=False,  #wandb_logger
             callbacks=callbacks,
             precision="bf16-mixed",
             # only for debug purpose

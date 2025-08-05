@@ -1,6 +1,7 @@
 __pycache__
 data
 output*
+lightning_logs
 
 .*
 *.code-workspace
@@ -10,3 +11,6 @@ output*
 *.pth
 *.sbatch
 *.sh
+*.err
+*.log
+*.zip

@@ -5,7 +5,6 @@ import torch.nn as nn
 import lightning as L
 import matplotlib.pyplot as plt
 import seaborn as sns
-import wandb
 import segmentation_models_pytorch as smp
 import segmentation_models_pytorch.utils as smp_utils
 from torchmetrics import (
@@ -129,19 +128,7 @@ class ClassificationModel(L.LightningModule):
             for j in range(2):
                 self.log(f"test/confmat_{i}_{j}", confmat[i, j])
 
-        fig, ax = plt.subplots()
-        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("True")
-        ax.set_title("Confusion Matrix")
-        self.logger.experiment.log(
-            {
-                "test/confmat": wandb.Image(fig),
-            }
-        )
-        plt.close(fig)
-
-        # Embedding visualization [3/3]: save test embeddings for visualization
+        ## Embedding visualization [3/3]: save test embeddings for visualization
         # test_embs = torch.cat(self.test_embs, dim=0)
         # test_emb_labels = torch.cat(self.test_emb_labels, dim=0)
         # torch.save(test_embs, "test_embs.pt")
@@ -272,18 +259,6 @@ class SegmentationModel(L.LightningModule):
         for i in range(2):
             for j in range(2):
                 self.log(f"test/confmat_{i}_{j}", confmat[i, j])
-
-        fig, ax = plt.subplots()
-        sns.heatmap(confmat, annot=True, fmt="d", cmap="Blues", cbar=False, ax=ax)
-        ax.set_xlabel("Predicted")
-        ax.set_ylabel("True")
-        ax.set_title("Confusion Matrix")
-        self.logger.experiment.log(
-            {
-                "test/confmat": wandb.Image(fig),
-            }
-        )
-        plt.close(fig)
 
         preds = []
         targets = []
