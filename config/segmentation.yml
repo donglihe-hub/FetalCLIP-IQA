@@ -10,7 +10,7 @@ num_workers: 8
 batch_size: 32
 
 # trainer arguments
-max_epochs: 5
+max_epochs: 2
 
 # number of trials
 num_trials: 5

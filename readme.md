@@ -101,8 +101,9 @@ data/
         │   └── *.npz
         ├── val/
         │   └── *.npz
-        └── test/
-            └── *.npz
+        ├── test/
+        │   └── *.npz
+        └── meta_info.csv
 ```
 
 

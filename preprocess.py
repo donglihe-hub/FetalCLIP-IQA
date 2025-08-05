@@ -202,4 +202,4 @@ if __name__ == "__main__":
         num_train_aug=2,
         visualize=False,  # Set to True if you want to save images for visualization
     )
-    # generate_meta_info(output_dir)
+    generate_meta_info(output_dir)
