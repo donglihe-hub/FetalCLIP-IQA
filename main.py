@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 init_logger()
 
 
-def get_encoder_and_transforms(model_name: str, config: dict[str, Union[str, Path]]) -> tuple:
+def get_encoder_and_transforms(
+    model_name: str, config: dict[str, Union[str, Path]]
+) -> tuple:
     # Load model configuration
     if model_name == "fetalclip":
         with open(config.fetalclip_config_path, "r") as file:
@@ -64,6 +66,7 @@ def get_encoder_and_transforms(model_name: str, config: dict[str, Union[str, Pat
     elif model_name == "medvit":
         # MedViT [1/2]: to test MedViT, you need to manually install medvit library and modify the relative path as needed
         import sys
+
         sys.path.append(str(Path("../MedViT").resolve().parent))
         from MedViT.MedViT import MedViT
     elif model_name == "swin":
@@ -174,9 +177,7 @@ def main(config: dict[str, Union[str, Path]]):
     max_epochs = 1
 
     for trial in range(num_trials):
-        logger.info(
-            f"Starting trial {trial + 1}/{num_trials}"
-        )
+        logger.info(f"Starting trial {trial + 1}/{num_trials}")
 
         # network setup
         if task == "classification":
@@ -222,9 +223,8 @@ def main(config: dict[str, Union[str, Path]]):
             name=f"{run_id}-trial_{trial}",
             save_dir=exp_output_folder,
             tags=[f"trial_{trial}", task, model_name, run_id],
-            settings=wandb.Settings(reinit="finish_previous")
+            settings=wandb.Settings(reinit="finish_previous"),
         )
-        
 
         trainer = L.Trainer(
             devices=1,
@@ -243,7 +243,9 @@ def main(config: dict[str, Union[str, Path]]):
         results = trainer.test(dataloaders=test_dataloader, ckpt_path="best")
 
         logger.info(f"Train time: {round(timer.time_elapsed('train'), 2)} s")
-        logger.info(f"Inference time: {round(timer.time_elapsed('test') * 1000 / len(test_dataloader), 2)} ms")
+        logger.info(
+            f"Inference time: {round(timer.time_elapsed('test') * 1000 / len(test_dataloader), 2)} ms"
+        )
 
         # Save results to CSV
         results = {"trial": trial, **results[0]}

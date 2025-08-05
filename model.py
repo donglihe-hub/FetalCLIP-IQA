@@ -290,7 +290,7 @@ class SegmentationModel(L.LightningModule):
         for outs in self.val_test_step_outputs:
             preds.append(outs[0])
             targets.append(outs[1])
-        
+
         preds = torch.cat(preds).cpu()
         targets = torch.cat(targets).cpu()
 

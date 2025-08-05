@@ -15,11 +15,7 @@ def main(visual_method: str = "tsne"):
         .squeeze()
         .astype(np.uint8)
     )
-    X = (
-        torch.load("test_embs.pt", map_location="cpu")
-        .to(torch.float32)
-        .numpy()
-    )
+    X = torch.load("test_embs.pt", map_location="cpu").to(torch.float32).numpy()
 
     print(f"X shape: {X.shape}, labels shape: {labels.shape}")
 

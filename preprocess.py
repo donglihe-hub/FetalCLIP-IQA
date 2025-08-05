@@ -117,17 +117,21 @@ def train_val_test_split(
                         image_mask_aug = general_aug(
                             image=image_mask_aug["image"], mask=image_mask_aug["mask"]
                         )
-                        output_path = target_dir / f"{uuid}_{slice_idx}_{aug_idx + 1}.npz"
+                        output_path = (
+                            target_dir / f"{uuid}_{slice_idx}_{aug_idx + 1}.npz"
+                        )
                         save_image_and_mask(output_path, image_mask_aug, visualize)
 
 
-def save_image_and_mask(output_path: Path, image_mask_aug: dict[str: np.ndarray], visualize: bool):
+def save_image_and_mask(
+    output_path: Path, image_mask_aug: dict[str : np.ndarray], visualize: bool
+):
     # save image to png for visualization
     if visualize:
-        img_pil = Image.fromarray(
-            image_mask_aug["image"].astype(np.uint8)
+        img_pil = Image.fromarray(image_mask_aug["image"].astype(np.uint8))
+        image_save_path = (
+            output_path.parent.parent / "image" / f"{output_path.stem}.png"
         )
-        image_save_path = output_path.parent.parent / "image" / f"{output_path.stem}.png"
         image_save_path.parent.mkdir(parents=True, exist_ok=True)
         img_pil.save(image_save_path)
 
@@ -146,7 +150,7 @@ def pad_to_square(arr: np.ndarray) -> np.ndarray:
     left = (max_size - w) // 2
 
     square_arr = np.zeros((max_size, max_size), dtype=arr.dtype)
-    square_arr[top:top + h, left:left + w] = arr
+    square_arr[top : top + h, left : left + w] = arr
 
     return square_arr
 

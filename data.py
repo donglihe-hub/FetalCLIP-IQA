@@ -134,7 +134,7 @@ class AcoudslicAIDataset(Dataset):
 
         image = image_mask["image"]
         mask = image_mask["mask"]
-        
+
         # 1 indicates presence of the mask, 0 indicates absence
         label = (mask.max() > 0).astype(np.float32)[None]
 
