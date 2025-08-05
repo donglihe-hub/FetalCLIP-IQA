@@ -66,7 +66,7 @@ class ClassificationModel(L.LightningModule):
         self.test_metrics.add_metrics({"confmat": ConfusionMatrix(task="binary")})
 
         # Embedding visualization [1/3]: save test embeddings for visualization
-        # self.test_embeds = []
+        # self.test_embs = []
         # self.test_emb_labels = []
 
     def forward(self, x):
@@ -116,7 +116,7 @@ class ClassificationModel(L.LightningModule):
         # Embedding visualization [2/3]: save test embeddings for visualization
         # embeddings = self.encoder(x)
         # embeddings = embeddings.detach().cpu()
-        # self.test_embeds.append(embeddings)
+        # self.test_embs.append(embeddings)
         # self.test_emb_labels.append(y)
 
     def on_test_epoch_end(self):
@@ -142,7 +142,7 @@ class ClassificationModel(L.LightningModule):
         plt.close(fig)
 
         # Embedding visualization [3/3]: save test embeddings for visualization
-        # test_embs = torch.cat(self.test_embeds, dim=0)
+        # test_embs = torch.cat(self.test_embs, dim=0)
         # test_emb_labels = torch.cat(self.test_emb_labels, dim=0)
         # torch.save(test_embs, "test_embs.pt")
         # torch.save(test_emb_labels, "test_emb_labels.pt")
