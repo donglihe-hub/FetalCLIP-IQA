@@ -1,12 +1,14 @@
 albumentationsx
 jsonargparse
 lightning
+opencv-python
 open-clip-torch
 rich
 pandas
 pillow
 peft
 segmentation-models-pytorch
+SimpleITK
 timm
 torch
 torchmetrics
