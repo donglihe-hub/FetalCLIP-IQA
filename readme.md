@@ -65,7 +65,7 @@ data/
         └── meta_info.csv
 ```
 
-## 2. Download Weights and Config
+## 2. Download Model Weights
 
 Download FetalCLIP model weights:
 
