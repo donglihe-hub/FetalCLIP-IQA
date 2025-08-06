@@ -99,6 +99,8 @@ def train_val_test_split(
                 image = pad_to_square(image)
                 mask = pad_to_square(mask)
 
+                mask = fill_contour(mask)
+
                 image_mask = {"image": image, "mask": mask}
                 image_mask = general_aug(
                     image=image_mask["image"], mask=image_mask["mask"]
@@ -135,6 +137,14 @@ def save_image_and_mask(
         image_save_path.parent.mkdir(parents=True, exist_ok=True)
         img_pil.save(image_save_path)
 
+        if image_mask_aug["mask"].max() > 0:
+            mask_pil = Image.fromarray(image_mask_aug["mask"].astype(np.uint8))
+            mask_save_path = (
+                output_path.parent.parent / "mask" / f"{output_path.stem}.png"
+            )
+            mask_save_path.parent.mkdir(parents=True, exist_ok=True)
+            mask_pil.save(mask_save_path)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         output_path,
@@ -155,6 +165,17 @@ def pad_to_square(arr: np.ndarray) -> np.ndarray:
     return square_arr
 
 
+def fill_contour(arr: np.ndarray) -> np.ndarray:
+        assert len(arr.shape) == 2
+        assert len(np.unique(arr)) <= 2
+        assert arr.dtype == np.uint8
+
+        out = arr.copy()
+        contours, _ = cv2.findContours(out, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(out, contours, -1, 255, thickness=cv2.FILLED)
+
+        return out
+
 def generate_meta_info(output_dir: Path):
     """
     Generate a CSV file with the label information for the specified split.
@@ -167,6 +188,8 @@ def generate_meta_info(output_dir: Path):
             sorted(split_dir.glob("*.npz")),
             desc=f"Collecting meta info for {split} data",
         ):
+            if split == "train" and len(npz_file.stem.split("_")) >= 3:
+                continue  # skip augmented files
             data = np.load(npz_file)
             label = (data["mask"].max() > 0).astype(int)
             meta_info_list.append(
